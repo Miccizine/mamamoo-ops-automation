@@ -20,8 +20,6 @@ async function getSheetData(sheets, sheetName) {
   return response.data.values || [];
 }
 
-console.log(`New milestone: ${trackName} | ${platform} | ${lastMilestone}`);
-
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
@@ -126,6 +124,8 @@ async function checkMilestone(sheets, trackName, album, platform, countType, cur
       return null; // Already logged
     }
   }
+
+  console.log(`New milestone: ${trackName} | ${platform} | ${lastMilestone}`);
 
   // Log milestone
   await appendSheetRow(sheets, 'Milestones Achieved', [
