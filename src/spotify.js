@@ -30,7 +30,7 @@ const {
   checkMilestone,
   sendDiscordDraft,
   logToSheet,
-  findMatchInRegistry
+  findMatchInRegistry,
   getComebackMode
 } = require('./helpers');
 
