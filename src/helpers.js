@@ -1,6 +1,20 @@
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
 
+// ── Format to PH Timestamp ────────────────────────────────────────────────────────
+function getPHTTimestamp() {
+  return new Date().toLocaleString('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).replace(',', '');
+}
+
 // ── Google Sheets Auth ────────────────────────────────────────────────────────
 
 async function getSheetsClient() {
@@ -28,7 +42,7 @@ async function appendSheetRow(sheets, sheetName, row) {
     insertDataOption: 'INSERT_ROWS',
     resource: {
       values: [[
-        new Date().toISOString(),
+        getPHTTimestamp(),
         trackName,
         album,
         platform,
@@ -142,7 +156,7 @@ async function checkMilestone(sheets, trackName, album, platform, countType, cur
 
   // Log milestone
   await appendSheetRow(sheets, 'Milestones Achieved', [
-    new Date().toISOString(),
+    getPHTTimestamp(),
     trackName,
     album,
     platform,
@@ -232,7 +246,7 @@ async function sendDiscordDraft(milestones) {
 
 async function logToSheet(sheets, trackName, album, platform, countType, rawCount, source, combinedViews) {
   await appendSheetRow(sheets, 'Raw Scrape Log', [
-    new Date().toISOString(),
+    getPHTTimestamp(),
     trackName,
     album,
     platform,
@@ -241,6 +255,17 @@ async function logToSheet(sheets, trackName, album, platform, countType, rawCoun
     combinedViews || '',
     source
   ]);
+}
+
+// ── Check Comeback Mode ───────────────────────────────────────────────────────
+async function getComebackMode(sheets) {
+  const config = await getSheetData(sheets, 'Config');
+  for (let i = 1; i < config.length; i++) {
+    if (config[i][0] === 'COMEBACK_MODE') {
+      return config[i][1].toString().trim().toUpperCase() === 'ON';
+    }
+  }
+  return false;
 }
 
 // ── Title Normalization ───────────────────────────────────────────────────────
@@ -279,6 +304,8 @@ function findMatchInRegistry(kworbTitle, registryData) {
 }
 
 module.exports = {
+  getComebackMode,
+  getPHTTimestamp,
   getSheetsClient,
   getSheetData,
   appendSheetRow,
