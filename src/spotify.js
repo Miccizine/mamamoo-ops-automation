@@ -1,21 +1,24 @@
 //----- check comeback mode at runtime and adjust its behavior -------------------
 async function main() {
   console.log('Starting Spotify scraper...');
-  const sheets = await getSheetsClient();
+
+  const sheets     = await getSheetsClient();
   const isComeback = await getComebackMode(sheets);
   console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
 
-  // In normal mode only run on Saturdays (day 6)
+  // In normal mode only run on Saturdays PHT
   if (!isComeback) {
     const dayOfWeek = new Date().toLocaleString('en-US', {
       timeZone: 'Asia/Manila',
       weekday: 'long'
     });
     if (dayOfWeek !== 'Saturday') {
-      console.log('Normal mode — skipping non-Saturday run.');
+      console.log(`Normal mode — today is ${dayOfWeek}, skipping non-Saturday run.`);
       return;
     }
   }
+
+  const registryData = await getSheetData(sheets, 'Master Registry');
 
 //----- Rest of scraping logic -------------------
 
@@ -28,6 +31,7 @@ const {
   sendDiscordDraft,
   logToSheet,
   findMatchInRegistry
+  getComebackMode
 } = require('./helpers');
 
 const fetch = require('node-fetch');
