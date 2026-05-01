@@ -1,0 +1,14 @@
+{
+  "name": "mamamoo-ops-automation",
+  "version": "1.0.0",
+  "description": "Automation scripts for Mamamoo Ops Hub",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {
+    "googleapis": "^140.0.0",
+    "node-fetch": "^2.7.0",
+    "cheerio": "^1.0.0"
+  }
+}
