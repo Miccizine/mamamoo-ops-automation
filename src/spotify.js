@@ -1,3 +1,24 @@
+//----- check comeback mode at runtime and adjust its behavior -------------------
+async function main() {
+  console.log('Starting Spotify scraper...');
+  const sheets = await getSheetsClient();
+  const isComeback = await getComebackMode(sheets);
+  console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
+
+  // In normal mode only run on Saturdays (day 6)
+  if (!isComeback) {
+    const dayOfWeek = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
+      weekday: 'long'
+    });
+    if (dayOfWeek !== 'Saturday') {
+      console.log('Normal mode — skipping non-Saturday run.');
+      return;
+    }
+  }
+
+//----- Rest of scraping logic -------------------
+
 const {
   getSheetsClient,
   getSheetData,
