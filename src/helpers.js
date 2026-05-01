@@ -23,9 +23,22 @@ async function getSheetData(sheets, sheetName) {
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: `${sheetName}!A:Z`,
+    range: `Milestones Achieved!A:I`,
     valueInputOption: 'USER_ENTERED',
-    resource: { values: [row] }
+    insertDataOption: 'INSERT_ROWS',
+    resource: {
+      values: [[
+        new Date().toISOString(),
+        trackName,
+        album,
+        platform,
+        lastMilestone,
+        countType,
+        sourceUrl,
+        '',
+        ''
+      ]]
+    }
   });
 }
 
