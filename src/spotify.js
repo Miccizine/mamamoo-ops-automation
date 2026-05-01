@@ -109,7 +109,7 @@ async function main() {
       const matchedRow     = match.row;
       const trackName      = matchedRow[0];
       const album          = matchedRow[2];
-      const activeTracking = matchedRow[14];
+      const activeTracking = matchedRow[15]; // Column P - Effective Tracking
 
       if (activeTracking.toString().trim().toLowerCase() !== 'yes') continue;
 
