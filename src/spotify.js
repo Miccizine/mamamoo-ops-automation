@@ -1,27 +1,3 @@
-//----- check comeback mode at runtime and adjust its behavior -------------------
-async function main() {
-  console.log('Starting Spotify scraper...');
-
-  const sheets     = await getSheetsClient();
-  const isComeback = await getComebackMode(sheets);
-  console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
-
-  // In normal mode only run on Saturdays PHT
-  if (!isComeback) {
-    const dayOfWeek = new Date().toLocaleString('en-US', {
-      timeZone: 'Asia/Manila',
-      weekday: 'long'
-    });
-    if (dayOfWeek !== 'Saturday') {
-      console.log(`Normal mode — today is ${dayOfWeek}, skipping non-Saturday run.`);
-      return;
-    }
-  }
-
-  const registryData = await getSheetData(sheets, 'Master Registry');
-
-//----- Rest of scraping logic -------------------
-
 const {
   getSheetsClient,
   getSheetData,
@@ -95,11 +71,25 @@ async function scrapeSpotifyPage(url) {
 async function main() {
   console.log('Starting Spotify scraper...');
 
-  const sheets       = await getSheetsClient();
-  const registryData = await getSheetData(sheets, 'Master Registry');
+  const sheets     = await getSheetsClient();
+  const isComeback = await getComebackMode(sheets);
+  console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
 
-  const milestones     = [];
-  const rawLogBuffer   = [];
+  // In normal mode only run on Saturdays PHT
+  if (!isComeback) {
+    const dayOfWeek = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
+      weekday: 'long'
+    });
+    if (dayOfWeek !== 'Saturday') {
+      console.log(`Normal mode — today is ${dayOfWeek}, skipping non-Saturday run.`);
+      return;
+    }
+  }
+
+  const registryData    = await getSheetData(sheets, 'Master Registry');
+  const milestones      = [];
+  const rawLogBuffer    = [];
   const unmatchedBuffer = [];
   const processedTracks = new Set();
 
@@ -143,12 +133,12 @@ async function main() {
       processedTracks.add(trackKey);
 
       const memberConfig = getMemberConfig(matchedRow);
-      const spotifyUri = matchedRow[10]; // Column K
-      const spotifyUrl = spotifyUri 
+
+      const spotifyUri = matchedRow[10];
+      const spotifyUrl = spotifyUri
         ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
         : `https://open.spotify.com/search/${encodeURIComponent(trackName)}`;
 
-      // Buffer raw log entry
       rawLogBuffer.push([
         new Date().toISOString(),
         trackName,
@@ -160,7 +150,6 @@ async function main() {
         artist.url
       ]);
 
-      // Check milestone
       const milestone = await checkMilestone(
         sheets,
         trackName,
@@ -175,28 +164,24 @@ async function main() {
       if (milestone) milestones.push(milestone);
     }
 
-    // Polite delay between pages
     await new Promise(r => setTimeout(r, 2000));
   }
 
-  // Batch write to sheets
   console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
   await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer);
 
-    if (unmatchedBuffer.length > 0) {
-      console.log(`Writing ${unmatchedBuffer.length} unmatched rows...`);
-      await batchAppendRows(sheets, 'Unmatched Tracks', unmatchedBuffer);
-    }
-  
-    // Send Discord notifications
-    console.log(`Milestones found: ${milestones.length}`);
-    await sendDiscordDraft(milestones);
-  
-    console.log('Spotify scraper complete.');
+  if (unmatchedBuffer.length > 0) {
+    console.log(`Writing ${unmatchedBuffer.length} unmatched rows...`);
+    await batchAppendRows(sheets, 'Unmatched Tracks', unmatchedBuffer);
   }
-  
-  main().catch(err => {
-    console.error('Fatal error:', err);
-    process.exit(1);
-  });
+
+  console.log(`Milestones found: ${milestones.length}`);
+  await sendDiscordDraft(milestones);
+
+  console.log('Spotify scraper complete.');
 }
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
