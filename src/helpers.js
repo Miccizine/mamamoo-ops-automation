@@ -20,6 +20,8 @@ async function getSheetData(sheets, sheetName) {
   return response.data.values || [];
 }
 
+console.log(`New milestone: ${trackName} | ${platform} | ${lastMilestone}`);
+
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
