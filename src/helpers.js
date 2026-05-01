@@ -1,7 +1,8 @@
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
 
-// ── Format to PH Timestamp ────────────────────────────────────────────────────────
+// ── PHT Timestamp ─────────────────────────────────────────────────────────────
+
 function getPHTTimestamp() {
   return new Date().toLocaleString('en-CA', {
     timeZone: 'Asia/Manila',
@@ -37,22 +38,10 @@ async function getSheetData(sheets, sheetName) {
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: `Milestones Achieved!A:I`,
+    range: `${sheetName}!A:Z`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
-    resource: {
-      values: [[
-        getPHTTimestamp(),
-        trackName,
-        album,
-        platform,
-        lastMilestone,
-        countType,
-        sourceUrl,
-        '',
-        ''
-      ]]
-    }
+    resource: { values: [row] }
   });
 }
 
@@ -142,19 +131,17 @@ async function checkMilestone(sheets, trackName, album, platform, countType, cur
   const lastMilestone = Math.floor(currentCount / interval) * interval;
   if (lastMilestone === 0) return null;
 
-  // Check Milestones Achieved sheet for duplicates
   const existing = await getSheetData(sheets, 'Milestones Achieved');
   for (let i = 1; i < existing.length; i++) {
     if (existing[i][1] === trackName &&
         existing[i][3] === platform &&
         parseInt(existing[i][4]) === lastMilestone) {
-      return null; // Already logged
+      return null;
     }
   }
 
   console.log(`New milestone: ${trackName} | ${platform} | ${lastMilestone}`);
 
-  // Log milestone
   await appendSheetRow(sheets, 'Milestones Achieved', [
     getPHTTimestamp(),
     trackName,
@@ -163,8 +150,8 @@ async function checkMilestone(sheets, trackName, album, platform, countType, cur
     lastMilestone,
     countType,
     sourceUrl,
-    '',  // Published checkbox — empty by default
-    ''   // Published Date
+    '',
+    ''
   ]);
 
   return {
@@ -225,7 +212,6 @@ async function sendDiscordDraft(milestones) {
       const retryAfter = response.headers.get('retry-after') || 5;
       console.log(`Rate limited. Waiting ${retryAfter} seconds...`);
       await new Promise(r => setTimeout(r, retryAfter * 1000));
-      // Retry once
       await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -237,7 +223,6 @@ async function sendDiscordDraft(milestones) {
       console.log(`Sent: ${m.trackName} — ${m.platform} ${formatMilestoneNumber(m.milestone)}`);
     }
 
-    // Respectful delay between messages
     await new Promise(r => setTimeout(r, 2000));
   }
 }
@@ -257,7 +242,8 @@ async function logToSheet(sheets, trackName, album, platform, countType, rawCoun
   ]);
 }
 
-// ── Check Comeback Mode ───────────────────────────────────────────────────────
+// ── Comeback Mode ─────────────────────────────────────────────────────────────
+
 async function getComebackMode(sheets) {
   const config = await getSheetData(sheets, 'Config');
   for (let i = 1; i < config.length; i++) {
@@ -303,8 +289,9 @@ function findMatchInRegistry(kworbTitle, registryData) {
   return null;
 }
 
+// ── Exports ───────────────────────────────────────────────────────────────────
+
 module.exports = {
-  getComebackMode,
   getPHTTimestamp,
   getSheetsClient,
   getSheetData,
@@ -318,6 +305,7 @@ module.exports = {
   checkMilestone,
   sendDiscordDraft,
   logToSheet,
+  getComebackMode,
   normalizeTitle,
   findMatchInRegistry
 };
