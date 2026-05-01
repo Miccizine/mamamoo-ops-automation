@@ -79,7 +79,7 @@ function getMemberConfig(row) {
 
 function buildClosingTags(config) {
   const isGroup = config.handle === '#MAMAMOO';
-  if (isGroup) return '#마마무 #ママム #妈妈木\n#mamamoo @RBW_MAMAMOO';
+  if (isGroup) return '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
   return `#마마무 #ママム #妈妈木\n#mamamoo ${config.label}`;
 }
 
