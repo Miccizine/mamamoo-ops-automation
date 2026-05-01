@@ -183,19 +183,20 @@ async function main() {
   console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
   await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer);
 
-  if (unmatchedBuffer.length > 0) {
-    console.log(`Writing ${unmatchedBuffer.length} unmatched rows...`);
-    await batchAppendRows(sheets, 'Unmatched Tracks', unmatchedBuffer);
+    if (unmatchedBuffer.length > 0) {
+      console.log(`Writing ${unmatchedBuffer.length} unmatched rows...`);
+      await batchAppendRows(sheets, 'Unmatched Tracks', unmatchedBuffer);
+    }
+  
+    // Send Discord notifications
+    console.log(`Milestones found: ${milestones.length}`);
+    await sendDiscordDraft(milestones);
+  
+    console.log('Spotify scraper complete.');
   }
-
-  // Send Discord notifications
-  console.log(`Milestones found: ${milestones.length}`);
-  await sendDiscordDraft(milestones);
-
-  console.log('Spotify scraper complete.');
+  
+  main().catch(err => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
 }
-
-main().catch(err => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
