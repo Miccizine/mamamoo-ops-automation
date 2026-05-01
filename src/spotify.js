@@ -5,9 +5,9 @@ const {
   getMemberConfig,
   checkMilestone,
   sendDiscordDraft,
-  logToSheet,
   findMatchInRegistry,
-  getComebackMode
+  getComebackMode,
+  getPHTTimestamp
 } = require('./helpers');
 
 const fetch = require('node-fetch');
@@ -112,7 +112,7 @@ async function main() {
 
       if (!match) {
         unmatchedBuffer.push([
-          new Date().toISOString(),
+          getPHTTimestamp(),
           track.title,
           track.streams,
           track.daily,
@@ -140,7 +140,7 @@ async function main() {
         : `https://open.spotify.com/search/${encodeURIComponent(trackName)}`;
 
       rawLogBuffer.push([
-        new Date().toISOString(),
+        getPHTTimestamp(),
         trackName,
         album,
         'Spotify',
