@@ -118,6 +118,10 @@ async function main() {
       processedTracks.add(trackKey);
 
       const memberConfig = getMemberConfig(matchedRow);
+      const spotifyUri = matchedRow[10]; // Column K
+      const spotifyUrl = spotifyUri 
+        ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
+        : `https://open.spotify.com/search/${encodeURIComponent(trackName)}`;
 
       // Buffer raw log entry
       rawLogBuffer.push([
@@ -139,7 +143,7 @@ async function main() {
         'Spotify',
         'Streams',
         track.streams,
-        `https://open.spotify.com/search/${encodeURIComponent(trackName)}`,
+        spotifyUrl,
         memberConfig
       );
 
