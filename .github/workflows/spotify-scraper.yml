@@ -2,13 +2,13 @@ name: Spotify Scraper
 
 on:
   schedule:
-    - cron: '0 */1 * * *' 
-  workflow_dispatch:          # Manual trigger for testing
+    - cron: '0 14 * * *'  # Daily 10PM PHT
+  workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +23,6 @@ jobs:
 
       - name: Run Spotify scraper
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           DISCORD_MILESTONE_WEBHOOK: ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
           GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
