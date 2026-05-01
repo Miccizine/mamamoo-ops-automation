@@ -1,0 +1,281 @@
+const { google } = require('googleapis');
+const fetch = require('node-fetch');
+
+// ── Google Sheets Auth ────────────────────────────────────────────────────────
+
+async function getSheetsClient() {
+  const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets']
+  });
+  return google.sheets({ version: 'v4', auth });
+}
+
+async function getSheetData(sheets, sheetName) {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: `${sheetName}!A:Z`
+  });
+  return response.data.values || [];
+}
+
+async function appendSheetRow(sheets, sheetName, row) {
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: `${sheetName}!A:Z`,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: [row] }
+  });
+}
+
+async function batchAppendRows(sheets, sheetName, rows) {
+  if (rows.length === 0) return;
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: `${sheetName}!A:Z`,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: rows }
+  });
+}
+
+// ── Member Config ─────────────────────────────────────────────────────────────
+
+function getMemberConfig(row) {
+  const ot4      = row[5];
+  const solar    = row[6];
+  const moonbyul = row[7];
+  const wheein   = row[8];
+  const hwasa    = row[9];
+
+  const memberTags = {
+    solar:    { handle: '#SOLAR',    tags: '#솔라 #ソラ #金容仙',      label: '@RBW_MAMAMOO' },
+    moonbyul: { handle: '#MOONBYUL', tags: '#문별 #ムンビョル #文星伊', label: '@RBW_MAMAMOO' },
+    wheein:   { handle: '#WHEEIN',   tags: '#휘인 #フィイン #丁輝人',   label: '@WheeIn_0fficial' },
+    hwasa:    { handle: '#HWASA',    tags: '#화사 #ファサ #華莎',       label: '@OfficialPnation' }
+  };
+
+  const activeMembers = [];
+  if (solar    === true || solar    === 'TRUE') activeMembers.push('solar');
+  if (moonbyul === true || moonbyul === 'TRUE') activeMembers.push('moonbyul');
+  if (wheein   === true || wheein   === 'TRUE') activeMembers.push('wheein');
+  if (hwasa    === true || hwasa    === 'TRUE') activeMembers.push('hwasa');
+
+  if (ot4 === true || ot4 === 'TRUE' || activeMembers.length === 0 || activeMembers.length === 4) {
+    return { handle: '#MAMAMOO', tags: '', label: '@RBW_MAMAMOO' };
+  }
+
+  if (activeMembers.length === 1) {
+    return memberTags[activeMembers[0]];
+  }
+
+  const handles = activeMembers.map(m => memberTags[m].handle).join(' & ');
+  const tags    = activeMembers.map(m => memberTags[m].tags).join('\n');
+  const labels  = [...new Set(activeMembers.map(m => memberTags[m].label))].join(' ');
+  return { handle: handles, tags, label: labels };
+}
+
+// ── Closing Tags ──────────────────────────────────────────────────────────────
+
+function buildClosingTags(config) {
+  const isGroup = config.handle === '#MAMAMOO';
+  if (isGroup) return '#마마무 #ママム #妈妈木\n#mamamoo @RBW_MAMAMOO';
+  return `#마마무 #ママム #妈妈木\n#mamamoo ${config.label}`;
+}
+
+// ── Milestone Helpers ─────────────────────────────────────────────────────────
+
+function formatMilestoneNumber(num) {
+  if (num >= 1000000000) return (num / 1000000000).toFixed(0) + ' Billion';
+  if (num >= 1000000)    return (num / 1000000).toFixed(0) + ' Million';
+  if (num >= 1000)       return (num / 1000).toFixed(0) + ' Thousand';
+  return num.toLocaleString();
+}
+
+function buildMilestoneLabel(platform, countType) {
+  if (platform === 'Spotify') return '[SPOTIFY MILESTONE] 🎵';
+  if (countType === 'Combined Views') return '[MV MILESTONE — COMBINED] 🔥';
+  return '[MV MILESTONE] 🔥';
+}
+
+function buildMilestoneSentence(config, trackName, formattedMilestone, platform, countType) {
+  if (platform === 'Spotify') {
+    return `${config.handle}'s "${trackName}" has surpassed ${formattedMilestone} streams on Spotify!`;
+  }
+  if (countType === 'Combined Views') {
+    return `${config.handle}'s "${trackName}" MV has surpassed ${formattedMilestone} combined views on YouTube!`;
+  }
+  return `${config.handle}'s "${trackName}" MV has surpassed ${formattedMilestone} views on YouTube!`;
+}
+
+// ── Milestone Detection ───────────────────────────────────────────────────────
+
+async function checkMilestone(sheets, trackName, album, platform, countType, currentCount, sourceUrl, memberConfig) {
+  const interval = platform === 'YouTube' ? 5000000 : 10000000;
+  const lastMilestone = Math.floor(currentCount / interval) * interval;
+  if (lastMilestone === 0) return null;
+
+  // Check Milestones Achieved sheet for duplicates
+  const existing = await getSheetData(sheets, 'Milestones Achieved');
+  for (let i = 1; i < existing.length; i++) {
+    if (existing[i][1] === trackName &&
+        existing[i][3] === platform &&
+        parseInt(existing[i][4]) === lastMilestone) {
+      return null; // Already logged
+    }
+  }
+
+  // Log milestone
+  await appendSheetRow(sheets, 'Milestones Achieved', [
+    new Date().toISOString(),
+    trackName,
+    album,
+    platform,
+    lastMilestone,
+    countType,
+    sourceUrl,
+    '',  // Published checkbox — empty by default
+    ''   // Published Date
+  ]);
+
+  return {
+    trackName,
+    album,
+    platform,
+    milestone: lastMilestone,
+    countType,
+    sourceUrl,
+    memberConfig
+  };
+}
+
+// ── Discord Delivery ──────────────────────────────────────────────────────────
+
+async function sendDiscordDraft(milestones) {
+  if (milestones.length === 0) return;
+  const webhookUrl = process.env.DISCORD_MILESTONE_WEBHOOK;
+
+  for (const m of milestones) {
+    const config             = m.memberConfig;
+    const formattedMilestone = formatMilestoneNumber(m.milestone);
+    const sourceUrl          = m.sourceUrl || '';
+    const closingTags        = buildClosingTags(config);
+    const headerLabel        = buildMilestoneLabel(m.platform, m.countType);
+    const sentence           = buildMilestoneSentence(config, m.trackName, formattedMilestone, m.platform, m.countType);
+
+    const tweetLines = [
+      headerLabel,
+      '',
+      sentence,
+      '',
+      `🔗 ${sourceUrl}`,
+      ''
+    ];
+
+    if (config.tags) tweetLines.push(config.tags);
+    tweetLines.push(closingTags);
+
+    const draftTweet = tweetLines.join('\n').trim();
+
+    const message = {
+      embeds: [{
+        title: '🎯 MILESTONE ALERT — Pending Approval',
+        color: m.platform === 'Spotify' ? 1947988 : 5814783,
+        description: draftTweet,
+        footer: { text: '✅ Approve and post manually to X | ❌ Discard' }
+      }]
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after') || 5;
+      console.log(`Rate limited. Waiting ${retryAfter} seconds...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      // Retry once
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message)
+      });
+    } else if (!response.ok) {
+      console.error(`Discord error ${response.status} for ${m.trackName}`);
+    } else {
+      console.log(`Sent: ${m.trackName} — ${m.platform} ${formatMilestoneNumber(m.milestone)}`);
+    }
+
+    // Respectful delay between messages
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
+// ── Log to Raw Scrape Log ─────────────────────────────────────────────────────
+
+async function logToSheet(sheets, trackName, album, platform, countType, rawCount, source, combinedViews) {
+  await appendSheetRow(sheets, 'Raw Scrape Log', [
+    new Date().toISOString(),
+    trackName,
+    album,
+    platform,
+    countType,
+    rawCount,
+    combinedViews || '',
+    source
+  ]);
+}
+
+// ── Title Normalization ───────────────────────────────────────────────────────
+
+function normalizeTitle(title) {
+  return title
+    .toLowerCase()
+    .replace(/\(feat\..*?\)/gi, '')
+    .replace(/\(ft\..*?\)/gi, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findMatchInRegistry(kworbTitle, registryData) {
+  const normalizedKworb = normalizeTitle(kworbTitle);
+
+  for (let i = 1; i < registryData.length; i++) {
+    const registryTitle = registryData[i][0] ? registryData[i][0].toString() : '';
+    if (normalizeTitle(registryTitle) === normalizedKworb) {
+      return { rowIndex: i, row: registryData[i], matchType: 'exact' };
+    }
+  }
+
+  for (let i = 1; i < registryData.length; i++) {
+    const registryTitle = registryData[i][0] ? registryData[i][0].toString() : '';
+    const normalizedRegistry = normalizeTitle(registryTitle);
+    if (normalizedKworb.includes(normalizedRegistry) ||
+        normalizedRegistry.includes(normalizedKworb)) {
+      return { rowIndex: i, row: registryData[i], matchType: 'partial' };
+    }
+  }
+
+  return null;
+}
+
+module.exports = {
+  getSheetsClient,
+  getSheetData,
+  appendSheetRow,
+  batchAppendRows,
+  getMemberConfig,
+  buildClosingTags,
+  formatMilestoneNumber,
+  buildMilestoneLabel,
+  buildMilestoneSentence,
+  checkMilestone,
+  sendDiscordDraft,
+  logToSheet,
+  normalizeTitle,
+  findMatchInRegistry
+};
