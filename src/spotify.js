@@ -47,7 +47,7 @@ function parseKworbTable(html) {
       daily   = parseInt(cells[2].replace(/,/g, ''), 10) || 0;
     }
 
-    if (!title || streams < 1000) continue;
+    if (!title || streams < 10000000) continue;
     tracks.push({ title, streams, daily });
   }
 
