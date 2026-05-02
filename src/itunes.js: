@@ -1,0 +1,175 @@
+const {
+  getSheetsClient,
+  getSheetData,
+  appendSheetRow,
+  batchAppendRows,
+  getMemberConfig,
+  sendDiscordNotification,
+  logToSheet,
+  findMatchInRegistry,
+  getComebackMode,
+  getPHTTimestamp,
+  normalizeTitle
+} = require('./helpers');
+
+const fetch = require('node-fetch');
+
+const ARTIST_PAGES = [
+  { url: 'https://kworb.net/itunes/artist/mamamoo.html',  label: 'MAMAMOO' },
+  { url: 'https://kworb.net/itunes/artist/solar.html',    label: 'Solar' },
+  { url: 'https://kworb.net/itunes/artist/moonbyul.html', label: 'Moonbyul' },
+  { url: 'https://kworb.net/itunes/artist/wheein.html',   label: 'Wheein' },
+  { url: 'https://kworb.net/itunes/artist/hwasa.html',    label: 'Hwasa' }
+];
+
+const WORLDWIDE_URLS = [
+  'https://kworb.net/ww/index.html',
+  'https://kworb.net/ww/index_full.html'
+];
+
+const MAMAMOO_KEYWORDS = [
+  'mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa',
+  '마마무', '솔라', '문별', '휘인', '화사'
+];
+
+// ── HTML Parsing ──────────────────────────────────────────────────────────────
+
+function parseTableRows(html) {
+  const results = [];
+  const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+
+  for (const row of rows) {
+    const cells = [];
+    const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let cellMatch;
+    while ((cellMatch = cellPattern.exec(row)) !== null) {
+      cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim());
+    }
+    if (cells.length >= 3) results.push(cells);
+  }
+  return results;
+}
+
+// ── Peak Tracker Helpers ──────────────────────────────────────────────────────
+
+function buildPeakMap(peakData) {
+  const map = {};
+  for (let i = 1; i < peakData.length; i++) {
+    const row = peakData[i];
+    if (!row[0] || !row[1]) continue;
+    const key = `${row[0]}|${row[1]}`;
+    map[key] = {
+      rowIndex:     i + 1, // 1-based for Sheets API
+      peakPosition: parseInt(row[2]) || 999,
+      dateAchieved: row[3] || '',
+      lastSeen:     row[4] || '',
+      entryDate:    row[5] || '',
+      reentryDate:  row[6] || ''
+    };
+  }
+  return map;
+}
+
+function getDayCount(entryDate, reentryDate) {
+  const baseDate = reentryDate || entryDate;
+  if (!baseDate) return 1;
+  const start = new Date(baseDate);
+  const now   = new Date();
+  const diff  = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  return Math.max(1, diff + 1);
+}
+
+function isReentry(lastSeen) {
+  if (!lastSeen) return false;
+  const last = new Date(lastSeen);
+  const now  = new Date();
+  const hoursDiff = (now - last) / (1000 * 60 * 60);
+  return hoursDiff > 12; // absent for more than 12 hours = re-entry
+}
+
+function isRecentRelease(releaseDate) {
+  if (!releaseDate) return false;
+  const release = new Date(releaseDate);
+  const now     = new Date();
+  const daysDiff = (now - release) / (1000 * 60 * 60 * 24);
+  return daysDiff <= 30;
+}
+
+// ── Discord Notification Builder ──────────────────────────────────────────────
+
+function buildItunesNotification(type, data) {
+  const {
+    trackName, position, country, prevPosition,
+    dayCount, peakPosition, memberConfig,
+    appleUrl, songHashtags, isNew, isReentryFlag
+  } = data;
+
+  const config      = memberConfig;
+  const closingLine = config.handle === '#MAMAMOO'
+    ? '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO'
+    : `#마마무 #ママム #妈妈木\n#mamamoo ${config.label}`;
+
+  const movement = prevPosition
+    ? position < prevPosition
+      ? `(+${prevPosition - position})`
+      : position > prevPosition
+      ? `(-${position - prevPosition})`
+      : '(=)'
+    : '(NEW)';
+
+  const entryLabel = isReentryFlag ? '(Re-entry)' : isNew ? '(NEW)' : movement;
+  const isPeak     = position <= peakPosition;
+  const peakFlag   = isPeak && !isNew ? ' 🔥NEW PEAK' : '';
+
+  let header, body, footer;
+
+  if (country === 'Worldwide') {
+    header = `Worldwide iTunes Song Chart 🌏`;
+    body   = `#${position} ${config.handle} - ${trackName} ${entryLabel}${peakFlag}`;
+    footer = dayCount > 1
+      ? `[DAY ${dayCount}${isReentryFlag ? ' since re-entry' : ''} | PEAK #${Math.min(position, peakPosition)}]`
+      : '';
+  } else {
+    header = `iTunes Song Chart 🎵`;
+    body   = `#${position} ${country}`;
+    footer = dayCount > 1
+      ? `[DAY ${dayCount}${isReentryFlag ? ' since re-entry' : ''} | PEAK #${Math.min(position, peakPosition)}]`
+      : '';
+  }
+
+  const lines = [header, '', body];
+  if (footer) lines.push('', footer);
+  if (appleUrl) lines.push('', `🔗 ${appleUrl}`);
+  if (songHashtags) lines.push('', songHashtags);
+  lines.push(closingLine);
+
+  return lines.join('\n').trim();
+}
+
+async function sendItunesDiscord(notifications) {
+  if (notifications.length === 0) return;
+  const webhookUrl = process.env.DISCORD_MILESTONE_WEBHOOK;
+
+  for (const n of notifications) {
+    const message = {
+      embeds: [{
+        title:       '📊 CHART UPDATE — Pending Approval',
+        color:       16744272,
+        description: n.draft,
+        footer:      { text: '✅ Approve and post manually to X | ❌ Discard' }
+      }]
+    };
+
+    const response = await fetch(webhookUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(message)
+    });
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after') || 5;
+      console.log(`Rate limited. Waiting ${retryAfter}s...`);
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      await fetch(webhookUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'app
