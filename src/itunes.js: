@@ -4,7 +4,6 @@ const {
   appendSheetRow,
   batchAppendRows,
   getMemberConfig,
-  sendDiscordNotification,
   logToSheet,
   findMatchInRegistry,
   getComebackMode,
