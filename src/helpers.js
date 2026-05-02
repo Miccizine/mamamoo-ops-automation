@@ -289,6 +289,71 @@ function findMatchInRegistry(kworbTitle, registryData) {
   return null;
 }
 
+// ── New Release Flag ──────────────────────────────────────────────────────────
+
+async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
+  const sheetId   = process.env.GOOGLE_SHEETS_ID;
+  const flagsData = await getSheetData(sheets, 'New Release Flags');
+
+  // Check if already flagged to avoid duplicates
+  for (let i = 1; i < flagsData.length; i++) {
+    if (normalizeTitle(flagsData[i][1] || '') === normalizeTitle(trackName)) {
+      return; // Already flagged
+    }
+  }
+
+  // Write to New Release Flags sheet
+  await appendSheetRow(sheets, 'New Release Flags', [
+    getPHTTimestamp(),
+    trackName,
+    artist || '',
+    source,
+    sourceUrl,
+    'Pending'
+  ]);
+
+  // Send Discord alert
+  const webhookUrl = process.env.DISCORD_FLAGS_WEBHOOK;
+  if (!webhookUrl) return;
+
+  const message = {
+    embeds: [{
+      title: '🆕 NEW RELEASE DETECTED — Needs Review',
+      color: 16776960,
+      fields: [
+        { name: '🎵 Track',  value: trackName,       inline: true },
+        { name: '🎤 Artist', value: artist || 'Unknown', inline: true },
+        { name: '📊 Source', value: source,           inline: true },
+        { name: '🔗 URL',    value: sourceUrl,        inline: false }
+      ],
+      description: 'This track appeared on a chart but is not in the Master Registry.\nReview and add manually if relevant.',
+      footer: { text: '✅ Add to Registry | ❌ Mark as Not Relevant' }
+    }]
+  };
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(message)
+    });
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after') || 5;
+      await new Promise(r => setTimeout(r, retryAfter * 1000));
+      await fetch(webhookUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(message)
+      });
+    }
+  } catch(e) {
+    console.error(`Flag webhook error: ${e.message}`);
+  }
+
+  console.log(`🆕 Flagged new release: ${trackName}`);
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -307,5 +372,6 @@ module.exports = {
   logToSheet,
   getComebackMode,
   normalizeTitle,
-  findMatchInRegistry
+  findMatchInRegistry,
+  flagNewRelease
 };
