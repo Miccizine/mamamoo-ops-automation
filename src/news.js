@@ -17,46 +17,52 @@ const RSS_SOURCES = [
     keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
   },
   {
-    url:      'https://www.allkpop.com/feed',
-    label:    'Allkpop',
-    language: 'EN',
-    keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
-  },
-  {
     url:      'https://en.yna.co.kr/RSS/news.xml',
     label:    'Yonhap',
     language: 'EN',
     keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
   },
   {
-    url:      'https://www.koreaherald.com/rss/entertainment.xml',
+    url:      'https://www.koreaherald.com/rss/020000000000.xml',
     label:    'Korea Herald',
     language: 'EN',
     keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
-  },
-  {
-    url:      'http://osen.mt.co.kr/rss/news.xml',
-    label:    'Osen',
-    language: 'KR',
-    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이']
-  },
-  {
-    url:      'https://www.starnewskorea.com/rss/rss.php',
-    label:    'Star News',
-    language: 'KR',
-    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이']
-  },
-  {
-    url:      'https://tenasia.hankyung.com/rss/feed',
-    label:    'Ten Asia',
-    language: 'KR',
-    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이']
   },
   {
     url:      'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
     label:    'Chosun',
     language: 'KR',
     keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이']
+  },
+  {
+    url:      'https://news.google.com/rss/search?q=%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
+    label:    'Google News KR - 마마무',
+    language: 'KR',
+    keywords: ['마마무', '솔라', '문별', '휘인', '화사']
+  },
+  {
+    url:      'https://news.google.com/rss/search?q=%EC%86%94%EB%9D%BC+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
+    label:    'Google News KR - 솔라',
+    language: 'KR',
+    keywords: ['솔라', '마마무', '김용선']
+  },
+  {
+    url:      'https://news.google.com/rss/search?q=%EB%AC%B8%EB%B3%84+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
+    label:    'Google News KR - 문별',
+    language: 'KR',
+    keywords: ['문별', '마마무', '문별이']
+  },
+  {
+    url:      'https://news.google.com/rss/search?q=%ED%9C%98%EC%9D%B8+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
+    label:    'Google News KR - 휘인',
+    language: 'KR',
+    keywords: ['휘인', '마마무', '정휘인']
+  },
+  {
+    url:      'https://news.google.com/rss/search?q=%ED%99%94%EC%82%AC+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
+    label:    'Google News KR - 화사',
+    language: 'KR',
+    keywords: ['화사', '마마무', '안혜진']
   }
 ];
 
@@ -132,7 +138,7 @@ function parseRSSItems(xml) {
 }
 
 function isRecent(pubDate, hoursBack = 24) {
-  if (!pubDate) return true; // include if no date
+  if (!pubDate) return true;
   const pub  = new Date(pubDate);
   const now  = new Date();
   const diff = (now - pub) / (1000 * 60 * 60);
@@ -153,13 +159,13 @@ async function sendNewsDiscord(articles) {
   for (const article of articles) {
     const message = {
       embeds: [{
-        title:       `📰 NEWS — Pending Approval`,
-        color:       3447003, // Discord blue
+        title:  `📰 NEWS — Pending Approval`,
+        color:  3447003,
         fields: [
-          { name: '📌 Title',   value: article.title,   inline: false },
-          { name: '📝 Summary', value: article.summary.substring(0, 500) || 'No summary available', inline: false },
-          { name: '🌐 Source',  value: article.source,  inline: true },
-          { name: '🔗 URL',     value: article.url,     inline: false }
+          { name: '📌 Title',   value: article.title,                                    inline: false },
+          { name: '📝 Summary', value: article.summary.substring(0, 500) || 'No summary', inline: false },
+          { name: '🌐 Source',  value: article.source,                                   inline: true  },
+          { name: '🔗 URL',     value: article.url,                                      inline: false }
         ],
         footer: { text: '✅ Approve and post manually to X | ❌ Discard' }
       }]
@@ -195,9 +201,9 @@ async function sendNewsDiscord(articles) {
 async function main() {
   console.log('Starting news pipeline...');
 
-  const sheets   = await getSheetsClient();
-  const newsLog  = await getSheetData(sheets, 'News Log');
-  const sheetId  = process.env.GOOGLE_SHEETS_ID;
+  const sheets  = await getSheetsClient();
+  const newsLog = await getSheetData(sheets, 'News Log');
+  const sheetId = process.env.GOOGLE_SHEETS_ID;
 
   // Build set of already logged URLs to avoid duplicates
   const loggedUrls = new Set();
@@ -205,8 +211,8 @@ async function main() {
     if (newsLog[i][4]) loggedUrls.add(newsLog[i][4]);
   }
 
-  const newArticles  = [];
-  const logBuffer    = [];
+  const newArticles = [];
+  const logBuffer   = [];
 
   for (const source of RSS_SOURCES) {
     console.log(`Fetching: ${source.label}`);
@@ -218,13 +224,9 @@ async function main() {
     console.log(`  Found ${items.length} items`);
 
     for (const item of items) {
-      // Skip if already logged
       if (loggedUrls.has(item.link)) continue;
-
-      // Skip if too old
       if (!isRecent(item.pubDate, 24)) continue;
 
-      // Check if relevant to Mamamoo
       const fullText = `${item.title} ${item.description}`;
       if (!containsKeyword(fullText, source.keywords)) continue;
 
@@ -236,7 +238,7 @@ async function main() {
         console.log(`  Translating: ${title.substring(0, 50)}...`);
         title   = await translateText(title);
         summary = await translateText(summary);
-        await new Promise(r => setTimeout(r, 500)); // DeepL rate limit
+        await new Promise(r => setTimeout(r, 500));
       }
 
       logBuffer.push([
