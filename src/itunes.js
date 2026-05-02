@@ -153,7 +153,7 @@ async function sendItunesDiscord(notifications) {
     const message = {
       embeds: [{
         title:       '📊 CHART UPDATE — Pending Approval',
-        color:       16744272,
+        color:       3067903,
         description: n.draft,
         footer:      { text: '✅ Approve and post manually to X | ❌ Discard' }
       }]
@@ -259,6 +259,11 @@ async function scrapeCountryCharts(sheets, registryData, peakData) {
     }
 
     const rows = parseTableRows(html);
+
+    if (rows.length === 0) {
+      console.log(`${artist.label}: no chart entries found`);
+      continue;
+    }
 
     for (const cells of rows) {
       if (cells.length < 3) continue;
@@ -369,6 +374,7 @@ async function scrapeWorldwideChart(sheets, registryData, peakData) {
   const notifications = [];
   const peakUpdates   = [];
   const rawLogBuffer  = [];
+  const processedWorldwide = new Set();
 
   for (const url of WORLDWIDE_URLS) {
     let html;
@@ -397,6 +403,10 @@ async function scrapeWorldwideChart(sheets, registryData, peakData) {
       const trackName = parts.length > 1
         ? parts.slice(1).join(' - ').trim()
         : artistTitle.trim();
+
+      const wwKey = `${trackName}|${position}`;
+      if (processedWorldwide.has(wwKey)) continue;
+      processedWorldwide.add(wwKey);
 
       const match        = findMatchInRegistry(trackName, registryData);
 
