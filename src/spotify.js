@@ -7,7 +7,8 @@ const {
   sendDiscordDraft,
   findMatchInRegistry,
   getComebackMode,
-  getPHTTimestamp
+  getPHTTimestamp,
+  flagNewRelease
 } = require('./helpers');
 
 const fetch = require('node-fetch');
@@ -111,6 +112,16 @@ async function main() {
       const match = findMatchInRegistry(track.title, registryData);
 
       if (!match) {
+  unmatchedBuffer.push([
+    getPHTTimestamp(),
+    track.title,
+    track.streams,
+    track.daily,
+    artist.label
+  ]);
+
+  // Flag as potential new release if streams are significant
+    if (!match) {
         unmatchedBuffer.push([
           getPHTTimestamp(),
           track.title,
@@ -118,6 +129,14 @@ async function main() {
           track.daily,
           artist.label
         ]);
+      
+        await flagNewRelease(
+          sheets,
+          track.title,
+          artist.label,
+          'Spotify/kworb',
+          artist.url
+        );
         continue;
       }
 
