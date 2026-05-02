@@ -124,7 +124,7 @@ async function main() {
       const matchedRow     = match.row;
       const trackName      = matchedRow[0];
       const album          = matchedRow[2];
-      const activeTracking = matchedRow[15]; // Column P - Effective Tracking
+      const activeTracking = matchedRow[11]; // Column P - Effective Tracking
 
       if (activeTracking.toString().trim().toLowerCase() !== 'yes') continue;
 
@@ -134,7 +134,7 @@ async function main() {
 
       const memberConfig = getMemberConfig(matchedRow);
 
-      const spotifyUri = matchedRow[10];
+      const spotifyUri = matchedRow[12]; // Column M - Spotify URI
       const spotifyUrl = spotifyUri
         ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
         : `https://open.spotify.com/search/${encodeURIComponent(trackName)}`;
