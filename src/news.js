@@ -23,12 +23,6 @@ const RSS_SOURCES = [
     keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
   },
   {
-    url:      'https://www.koreaherald.com/rss/020000000000.xml',
-    label:    'Korea Herald',
-    language: 'EN',
-    keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
-  },
-  {
     url:      'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
     label:    'Chosun',
     language: 'KR',
@@ -124,11 +118,21 @@ function parseRSSItems(xml) {
     const link    = (block.match(/<link>([\s\S]*?)<\/link>/) ||
                      block.match(/<link\s+href="([^"]+)"/))?.[1]?.trim() || '';
     const pubDate = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1]?.trim() || '';
-    const desc    = (block.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
-                     block.match(/<description>([\s\S]*?)<\/description>/))?.[1]
-                     ?.replace(/<[^>]+>/g, '')
-                     ?.trim() || '';
+    const rawDesc = (block.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
+                  block.match(/<description>([\s\S]*?)<\/description>/))?.[1] || '';
 
+    const desc = rawDesc
+      .replace(/<[^>]+>/g, '')           // strip HTML tags
+      .replace(/&lt;[^&]*&gt;/g, '')     // strip encoded HTML tags
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+        
     if (!title || !link) continue;
 
     items.push({ title, link, pubDate, description: desc });
@@ -211,6 +215,11 @@ async function main() {
     if (newsLog[i][4]) loggedUrls.add(newsLog[i][4]);
   }
 
+  const loggedTitles = new Set();
+  for (let i = 1; i < newsLog.length; i++) {
+    if (newsLog[i][1]) loggedTitles.add(newsLog[i][1].toLowerCase().trim());
+  }
+
   const newArticles = [];
   const logBuffer   = [];
 
@@ -225,6 +234,12 @@ async function main() {
 
     for (const item of items) {
       if (loggedUrls.has(item.link)) continue;
+
+      // Secondary dedup by normalized title
+      const normalizedTitle = item.title.toLowerCase().trim();
+      if (loggedTitles.has(normalizedTitle)) continue;
+      loggedTitles.add(normalizedTitle);
+      
       if (!isRecent(item.pubDate, 24)) continue;
 
       const fullText = `${item.title} ${item.description}`;
