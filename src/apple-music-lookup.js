@@ -16,7 +16,7 @@ const MAMAMOO_ARTISTS = [
 
 async function searchItunesApi(trackName, artistName, retries = 2) {
   const query = encodeURIComponent(`${trackName} ${artistName}`);
-  const url = `https://itunes.apple.com/search?term=${query}&entity=song&limit=10&media=music&country=kr`;
+  const url = `https://itunes.apple.com/search?term=${query}&entity=song&limit=10&media=music&country=ph`;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
