@@ -166,7 +166,7 @@ async function main() {
     }
 
     // Polite delay to avoid rate limiting iTunes API
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   // Batch write high-confidence URLs to registry
