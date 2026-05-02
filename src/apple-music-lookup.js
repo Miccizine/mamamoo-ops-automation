@@ -14,21 +14,41 @@ const MAMAMOO_ARTISTS = [
 
 // ── iTunes Search API ─────────────────────────────────────────────────────────
 
-async function searchItunesApi(trackName, artistName) {
+async function searchItunesApi(trackName, artistName, retries = 2) {
   const query = encodeURIComponent(`${trackName} ${artistName}`);
   const url   = `https://itunes.apple.com/search?term=${query}&entity=song&limit=10&media=music`;
 
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    return data.results || [];
-  } catch(e) {
-    console.error(`iTunes API error for "${trackName}": ${e.message}`);
-    return [];
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+
+      if (response.status === 429 || response.status === 403) {
+        if (attempt < retries) {
+          const wait = (attempt + 1) * 3000;
+          console.log(`HTTP ${response.status} for "${trackName}" — retrying in ${wait/1000}s...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        console.error(`iTunes API error for "${trackName}": HTTP ${response.status}`);
+        return [];
+      }
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return data.results || [];
+
+    } catch(e) {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+      console.error(`iTunes API error for "${trackName}": ${e.message}`);
+      return [];
+    }
   }
+  return [];
 }
 
 // ── Confidence Scoring ────────────────────────────────────────────────────────
@@ -166,7 +186,7 @@ async function main() {
     }
 
     // Polite delay to avoid rate limiting iTunes API
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
   }
 
   // Batch write high-confidence URLs to registry
