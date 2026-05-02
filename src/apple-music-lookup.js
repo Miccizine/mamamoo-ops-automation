@@ -16,7 +16,7 @@ const MAMAMOO_ARTISTS = [
 
 async function searchItunesApi(trackName, artistName, retries = 2) {
   const query = encodeURIComponent(`${trackName} ${artistName}`);
-  const url   = `https://itunes.apple.com/search?term=${query}&entity=song&limit=10&media=music`;
+  const url = `https://itunes.apple.com/search?term=${query}&entity=song&limit=10&media=music&country=kr`;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -189,19 +189,23 @@ async function main() {
     await new Promise(r => setTimeout(r, 1500));
   }
 
-  // Batch write high-confidence URLs to registry
+  // collect all high-confidence URLs first, then write them all in one batch instead of one write per row
   if (updateRequests.length > 0) {
-    console.log(`Writing ${updateRequests.length} Apple Music URLs to registry...`);
-
-    for (const req of updateRequests) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId:    sheetId,
-        range:            `Master Registry!Q${req.rowIndex}`,
-        valueInputOption: 'USER_ENTERED',
-        resource:         { values: [[req.url]] }
+      console.log(`Writing ${updateRequests.length} Apple Music URLs to registry...`);
+    
+      const batchData = updateRequests.map(req => ({
+        range:  `Master Registry!Q${req.rowIndex}`,
+        values: [[req.url]]
+      }));
+    
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: sheetId,
+        resource: {
+          valueInputOption: 'USER_ENTERED',
+          data: batchData
+        }
       });
     }
-  }
 
   // Batch write flagged matches to review sheet
   if (reviewBuffer.length > 0) {
