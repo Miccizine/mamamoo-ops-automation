@@ -26,13 +26,13 @@ const RSS_SOURCES = [
     url:      'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
     label:    'Chosun',
     language: 'KR',
-    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이']
+    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '김용선', '안혜진', '정휘인', '문별이', '마마무플러스']
   },
   {
     url:      'https://news.google.com/rss/search?q=%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
     label:    'Google News KR - 마마무',
     language: 'KR',
-    keywords: ['마마무', '솔라', '문별', '휘인', '화사']
+    keywords: ['마마무', '솔라', '문별', '휘인', '화사', '마마무플러스']
   },
   {
     url:      'https://news.google.com/rss/search?q=%EC%86%94%EB%9D%BC+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
