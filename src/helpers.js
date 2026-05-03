@@ -85,6 +85,18 @@ function getMemberConfig(row) {
     return memberTags[activeMembers[0]];
   }
 
+  // Special case — Mamamoo+ unit (Solar + Moonbyul)
+  if (activeMembers.length === 2 &&
+      activeMembers.includes('solar') &&
+      activeMembers.includes('moonbyul')) {
+    return {
+      handle: 'MAMAMOO+',
+      tags:   '#MAMAMOOplus #마마무플러스\n#Solar #솔라\n##Moonbyul 문별',
+      label:  '@RBW_MAMAMOO'
+    };
+  }
+  
+  // Unit — combine handles, tags per line, labels deduplicated
   const handles = activeMembers.map(m => memberTags[m].handle).join(' & ');
   const tags    = activeMembers.map(m => memberTags[m].tags).join('\n');
   const labels  = [...new Set(activeMembers.map(m => memberTags[m].label))].join(' ');
