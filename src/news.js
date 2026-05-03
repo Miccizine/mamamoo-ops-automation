@@ -38,25 +38,25 @@ const RSS_SOURCES = [
     url:      'https://news.google.com/rss/search?q=%EC%86%94%EB%9D%BC+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
     label:    'Google News KR - 솔라',
     language: 'KR',
-    keywords: ['솔라', '마마무', '김용선']
+    keywords: ['솔라', '마마무', '김용선', '마마무플러스']
   },
   {
     url:      'https://news.google.com/rss/search?q=%EB%AC%B8%EB%B3%84+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
     label:    'Google News KR - 문별',
     language: 'KR',
-    keywords: ['문별', '마마무', '문별이']
+    keywords: ['문별', '마마무', '문별이', '마마무플러스']
   },
   {
     url:      'https://news.google.com/rss/search?q=%ED%9C%98%EC%9D%B8+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
     label:    'Google News KR - 휘인',
     language: 'KR',
-    keywords: ['휘인', '마마무', '정휘인']
+    keywords: ['휘인', '마마무', '정휘인', '마마무플러스']
   },
   {
     url:      'https://news.google.com/rss/search?q=%ED%99%94%EC%82%AC+%EB%A7%88%EB%A7%88%EB%AC%B4+when:1d&hl=ko&gl=KR&ceid=KR:ko',
     label:    'Google News KR - 화사',
     language: 'KR',
-    keywords: ['화사', '마마무', '안혜진']
+    keywords: ['화사', '마마무', '안혜진', '마마무플러스']
   }
 ];
 
