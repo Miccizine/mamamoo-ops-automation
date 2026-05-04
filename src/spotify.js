@@ -111,15 +111,6 @@ async function main() {
     for (const track of tracks) {
       const match = findMatchInRegistry(track.title, registryData);
 
-      if (!match) {
-  unmatchedBuffer.push([
-    getPHTTimestamp(),
-    track.title,
-    track.streams,
-    track.daily,
-    artist.label
-  ]);
-
   // Flag as potential new release if streams are significant
     if (!match) {
         unmatchedBuffer.push([
