@@ -39,7 +39,7 @@ async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
     range: `${sheetName}!A:Z`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',        // ← was USER_ENTERED
     insertDataOption: 'INSERT_ROWS',
     resource: { values: [row] }
   });
@@ -50,7 +50,7 @@ async function batchAppendRows(sheets, sheetName, rows) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
     range: `${sheetName}!A:Z`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: 'RAW',        // ← was USER_ENTERED
     resource: { values: rows }
   });
 }
@@ -147,7 +147,7 @@ async function checkMilestone(sheets, trackName, album, platform, countType, cur
   for (let i = 1; i < existing.length; i++) {
     if (existing[i][1] === trackName &&
         existing[i][3] === platform &&
-        parseInt(existing[i][4]) === lastMilestone) {
+        parseInt((existing[i][4] || '').toString().replace(/,/g, ''), 10) === lastMilestone) {
       return null;
     }
   }
