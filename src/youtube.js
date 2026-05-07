@@ -256,4 +256,125 @@ async function main() {
     processedTracks.add(trackName);
 
     const trackVideos = videoIds
-      .map(id => viewsB
+      .map(id => viewsByVideoId[id])
+      .filter(Boolean);
+
+    if (trackVideos.length === 0) continue;
+
+    const primary        = trackVideos[0];
+    const hasMultiple    = trackVideos.length > 1;
+    const totalViews     = trackVideos.reduce((sum, v) => sum + v.viewCount, 0);
+    const milestoneCount = hasMultiple ? totalViews : primary.viewCount;
+    const countType      = hasMultiple ? 'Combined Views' : 'Views';
+
+    // Log all individual URLs to Raw Scrape Log
+    for (let i = 0; i < trackVideos.length; i++) {
+      const v = trackVideos[i];
+      rawLogBuffer.push([
+        getPHTTimestamp(),
+        trackName,
+        primary.album,
+        'YouTube',
+        'Views',
+        v.viewCount,
+        i === 0 && hasMultiple ? totalViews : '',
+        v.sourceUrl
+      ]);
+
+      // Log likes separately for primary URL
+      if (i === 0) {
+        rawLogBuffer.push([
+          getPHTTimestamp(),
+          trackName,
+          primary.album,
+          'YouTube',
+          'Likes',
+          v.likeCount,
+          '',
+          v.sourceUrl
+        ]);
+      }
+    }
+
+    // Check view milestone
+    const viewMilestone = await checkYouTubeMilestone(
+      sheets,
+      trackName,
+      primary.album,
+      countType,
+      milestoneCount,
+      primary.sourceUrl,
+      primary.memberConfig,
+      isComeback,
+      primary.isComebackTrack
+    );
+    if (viewMilestone) milestones.push(viewMilestone);
+
+    // Check likes milestone (every 1M normal, every 100K comeback)
+    const likesInterval  = isComeback && primary.isComebackTrack ? 100000 : 1000000;
+    const likesMilestone = Math.floor(primary.viewCount / likesInterval) * likesInterval;
+
+    if (likesMilestone > 0) {
+      const existingMilestones = await getSheetData(sheets, 'Milestones Achieved');
+      const likesDuplicate = existingMilestones.slice(1).some(row =>
+        row[1] === trackName &&
+        row[3] === 'YouTube' &&
+        row[5] === 'Likes' &&
+        parseInt(row[4]) === likesMilestone
+      );
+
+      if (!likesDuplicate) {
+        await appendSheetRow(sheets, 'Milestones Achieved', [
+          getPHTTimestamp(),
+          trackName,
+          primary.album,
+          'YouTube',
+          likesMilestone,
+          'Likes',
+          primary.sourceUrl,
+          '',
+          ''
+        ]);
+
+        milestones.push({
+          trackName,
+          album:        primary.album,
+          platform:     'YouTube',
+          milestone:    likesMilestone,
+          countType:    'Likes',
+          sourceUrl:    primary.sourceUrl,
+          memberConfig: primary.memberConfig
+        });
+      }
+    }
+  }
+
+  // Write raw log
+  if (rawLogBuffer.length > 0) {
+    console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
+    await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer);
+  }
+
+  // Process overflow queue from previous runs
+  const queuedMilestones = await processOverflowQueue(sheets);
+  const allMilestones    = [...queuedMilestones, ...milestones];
+
+  // Send up to 10 per run, queue the rest
+  const MAX_SEND  = 10;
+  const toSend    = allMilestones.slice(0, MAX_SEND);
+  const overflow  = allMilestones.slice(MAX_SEND);
+
+  if (overflow.length > 0) {
+    await saveOverflowToQueue(sheets, overflow);
+  }
+
+  console.log(`Milestones: ${milestones.length} new | ${queuedMilestones.length} queued | Sending: ${toSend.length}`);
+  await sendDiscordDraft(toSend);
+
+  console.log('YouTube scraper complete.');
+}
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
