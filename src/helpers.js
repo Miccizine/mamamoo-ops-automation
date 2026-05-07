@@ -139,7 +139,7 @@ function buildMilestoneSentence(config, trackName, formattedMilestone, platform,
 // ── Milestone Detection ───────────────────────────────────────────────────────
 
 async function checkMilestone(sheets, trackName, album, platform, countType, currentCount, sourceUrl, memberConfig) {
-  const interval = platform === 'YouTube' ? 5000000 : 10000000;
+  const interval = 10000000; // YouTube now handled directly in youtube.js
   const lastMilestone = Math.floor(currentCount / interval) * interval;
   if (lastMilestone === 0) return null;
 
