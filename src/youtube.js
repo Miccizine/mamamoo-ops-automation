@@ -76,7 +76,7 @@ async function isMilestoneLogged(sheets, trackName, platform, milestoneValue, co
     if (
       existing[i][1] === trackName &&
       existing[i][3] === platform &&
-      parseInt(existing[i][4]) === milestoneValue &&
+      parseInt((existing[i][4] || '').toString().replace(/,/g, ''), 10) === milestoneValue &&
       existing[i][5] === countType
     ) return true;
   }
