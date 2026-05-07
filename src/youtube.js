@@ -19,11 +19,15 @@ const fetch = require('node-fetch');
 async function getYouTubeStatsBatch(videoIds) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   const ids    = videoIds.join(',');
+  console.log(`Requesting batch: ${ids}`);
   const url    = `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${ids}&key=${apiKey}`;
 
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status} | ${errorText}`);
+    }
     const data = await response.json();
     const statsMap = {};
     if (data.items) {
@@ -37,6 +41,41 @@ async function getYouTubeStatsBatch(videoIds) {
     console.error(`YouTube API error: ${e.message}`);
     return {};
   }
+}
+
+// ── Video ID Extractor ──────────────────────────────────────────────────
+function extractYouTubeVideoId(url) {
+  try {
+    const parsed = new URL(url);
+
+    // youtu.be short links
+    if (parsed.hostname.includes('youtu.be')) {
+      return parsed.pathname.slice(1);
+    }
+
+    // standard watch URLs
+    const v = parsed.searchParams.get('v');
+    if (v) return v;
+
+    // shorts/live/embed URLs
+    const paths = parsed.pathname.split('/').filter(Boolean);
+
+    const specialIndex = paths.findIndex(p =>
+      ['shorts', 'live', 'embed'].includes(p)
+    );
+
+    if (specialIndex !== -1 && paths[specialIndex + 1]) {
+      return paths[specialIndex + 1];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function isValidYouTubeVideoId(id) {
+  return /^[a-zA-Z0-9_-]{11}$/.test(id);
 }
 
 // ── Milestone Interval Logic ──────────────────────────────────────────────────
@@ -195,9 +234,11 @@ async function main() {
     const validVideoIds     = [];
 
     for (const url of urls) {
-      const match = url.match(/(?:v=|youtu\.be\/)([^&\n?#]+)/);
-      if (!match) continue;
-      const videoId = match[1];
+      const videoId = extractYouTubeVideoId(url);
+      if (!videoId || !isValidYouTubeVideoId(videoId)) {
+        console.log(`Invalid YouTube URL skipped: ${url}`);
+        continue;
+      }
       if (seenVideoIds.has(videoId)) continue;
       seenVideoIds.add(videoId);
       validVideoIds.push(videoId);
