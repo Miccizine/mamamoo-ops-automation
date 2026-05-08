@@ -1,0 +1,29 @@
+name: Spotify Korea Daily Chart
+
+on:
+  schedule:
+    - cron: '0 15 * * *'  # Daily 11PM PHT (15:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Spotify Korea scraper
+        env:
+          DISCORD_MILESTONE_WEBHOOK: ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: node src/spotify-korea.js
