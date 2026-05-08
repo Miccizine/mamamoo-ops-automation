@@ -12,6 +12,7 @@ const {
   formatMilestoneNumber
 } = require('./helpers');
 
+const { appendSheetRow } = require('./helpers');
 const fetch = require('node-fetch');
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3/videos';
@@ -84,7 +85,6 @@ async function isMilestoneLogged(sheets, trackName, platform, milestoneValue, co
 }
 
 async function logMilestone(sheets, trackName, album, platform, milestoneValue, countType, sourceUrl) {
-  const { appendSheetRow } = require('./helpers');
   await appendSheetRow(sheets, 'Milestones Achieved', [
     getPHTTimestamp(),
     trackName,
@@ -445,7 +445,18 @@ async function main() {
       }
 
       // Likes milestone (100K, skip if view milestone fired)
-      const viewMilestoneFired = milestone1M > 0 && !(await isMilestoneLogged(sheets, track.trackName, 'YouTube', milestone1M, countType));
+      const viewMilestoneFired = milestone1M > 0 && !alreadyLogged;
+      if (!viewMilestoneFired) {
+        const likeMilestone = getLastMilestone(likeCount, 100000);
+        if (likeMilestone > 0) {
+          const likesAlreadyLogged = await isMilestoneLogged(sheets, track.trackName, 'YouTube', likeMilestone, 'Likes');
+          if (!likesAlreadyLogged) {
+            await logMilestone(sheets, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
+            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, viewCount, likeMilestone, 'Likes', track.primaryUrl);
+            await sendToMilestoneWebhook(embed);
+          }
+        }
+      }
       if (!viewMilestoneFired) {
         const likeMilestone = getLastMilestone(likeCount, 100000);
         if (likeMilestone > 0) {
