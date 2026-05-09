@@ -2,7 +2,7 @@ name: iTunes Scraper
 on:
   schedule:
     - cron: '0 */6 * * *'    # Normal mode: every 6 hours
-    - cron: '*/20 * * * *'   # Comeback mode: every 20 minutes (self-gates if OFF)
+    - cron: '15/20 * * * *'   # Comeback mode: every 20 minutes (self-gates if OFF)
   workflow_dispatch:
 jobs:
   scrape:
