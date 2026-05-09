@@ -12,9 +12,46 @@ const {
 
 const fetch = require('node-fetch');
 
-const DAILY_URL  = 'https://kworb.net/spotify/country/kr_daily.html';
-const WEBHOOK    = process.env.DISCORD_MILESTONE_WEBHOOK;
-const COLOR      = 1947988; // Spotify green
+const DAILY_URL = 'https://kworb.net/spotify/country/kr_daily.html';
+const WEBHOOK   = process.env.DISCORD_MILESTONE_WEBHOOK;
+const COLOR     = 1947988;
+const SHEET_NAME = 'Spotify Korea Chart';
+const HEADERS   = ['Track Name', 'Artist', 'Peak Position', 'Date Achieved', 'Last Seen', 'Entry Date', 'Re-entry Date', 'Current Day Count', 'Current Position'];
+
+// ── Ensure sheet exists, create with headers if not ──────────────────────────
+
+async function ensureSheet(sheets) {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+  // Get all existing sheet names
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const existing = meta.data.sheets.map(s => s.properties.title);
+
+  if (existing.includes(SHEET_NAME)) return;
+
+  console.log(`Sheet "${SHEET_NAME}" not found — creating...`);
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    resource: {
+      requests: [{
+        addSheet: {
+          properties: { title: SHEET_NAME }
+        }
+      }]
+    }
+  });
+
+  // Write headers
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A1:I1`,
+    valueInputOption: 'RAW',
+    resource: { values: [HEADERS] }
+  });
+
+  console.log(`Sheet "${SHEET_NAME}" created with headers.`);
+}
 
 // ── Scrape kworb Korea daily chart ───────────────────────────────────────────
 
@@ -38,25 +75,22 @@ function parseKoreaChart(html) {
       cells.push(m[1].replace(/<[^>]+>/g, '').trim());
     }
 
-    // Expect at least 8 cells: Pos, P+, Artist+Title, Days, Pk, Streams, Streams+, 7Day...
     if (cells.length < 6) continue;
 
-    const pos      = parseInt(cells[0], 10);
+    const pos = parseInt(cells[0], 10);
     if (isNaN(pos)) continue;
 
-    const movement    = cells[1] || '0';   // raw string e.g. "+2", "-1", "0"
+    const movement    = cells[1] || '0';
     const artistTitle = cells[2] || '';
     const peak        = parseInt(cells[4], 10) || pos;
     const streams     = parseInt((cells[5] || '').replace(/,/g, ''), 10) || 0;
-    const streamsPlus = parseInt((cells[6] || '').replace(/,/g, ''), 10) || 0;
 
-    // artistTitle format on kworb: "Artist and Title" separated by " - "
     const dashIdx = artistTitle.indexOf(' - ');
     if (dashIdx === -1) continue;
     const artist = artistTitle.substring(0, dashIdx).trim();
     const title  = artistTitle.substring(dashIdx + 3).trim();
 
-    tracks.push({ pos, movement, artist, title, peak, streams, streamsPlus });
+    tracks.push({ pos, movement, artist, title, peak, streams });
   }
 
   return tracks;
@@ -72,78 +106,65 @@ function formatMovement(raw, isNew, isReentry) {
   return n > 0 ? `(+${n})` : `(${n})`;
 }
 
-// ── Get today's date string in KST ───────────────────────────────────────────
+// ── Get today KST date string ─────────────────────────────────────────────────
 
 function getKSTDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 }
 
-// ── Read Spotify Korea Chart sheet ───────────────────────────────────────────
+// ── Load chart data into memory ───────────────────────────────────────────────
 
-async function getKoreaChartData(sheets) {
-  const data = await getSheetData(sheets, 'Spotify Korea Chart');
-  // Returns map of trackName -> row index and row data
+function buildChartMap(data) {
   const map = {};
   for (let i = 1; i < data.length; i++) {
     const trackName = (data[i][0] || '').trim();
     if (trackName) map[trackName] = { idx: i, row: data[i] };
   }
-  return { raw: data, map };
+  return map;
 }
 
-// ── Update or insert row in Spotify Korea Chart ───────────────────────────────
-// We use batchUpdate for existing rows, appendSheetRow for new ones
+// ── Upsert row in Spotify Korea Chart ────────────────────────────────────────
 
-async function upsertKoreaChartRow(sheets, existingData, trackName, artist, pos, peak, isNew, isReentry, today) {
-  const existing = existingData.map[trackName];
+async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, peak, isNew, isReentry, today) {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+  const existing      = chartMap[trackName];
 
   if (!existing) {
-    // New entry
-    await appendSheetRow(sheets, 'Spotify Korea Chart', [
-      trackName,
-      artist,
-      pos,        // Peak Position
-      today,      // Date Achieved (peak date)
-      today,      // Last Seen
-      today,      // Entry Date
-      '',         // Re-entry Date
-      1,          // Current Day Count
-      pos         // Current Position
+    await appendSheetRow(sheets, SHEET_NAME, [
+      trackName, artist, pos, today, today, today, '', 1, pos
     ]);
+    // Add to in-memory map to prevent double-inserts in same run
+    chartMap[trackName] = { idx: -1, row: [trackName, artist, pos, today, today, today, '', 1, pos] };
     return;
   }
 
-  const row          = existing.row;
-  const currentPeak  = parseInt((row[2] || '999').toString(), 10);
-  const entryDate    = row[5] || today;
-  const reentryDate  = isReentry ? today : (row[6] || '');
+  const row         = existing.row;
+  const currentPeak = parseInt((row[2] || '999').toString().replace(/,/g, ''), 10);
+  const entryDate   = row[5] || today;
+  const reentryDate = isReentry ? today : (row[6] || '');
 
-  // Compute day count
-  const baseDate   = isReentry ? today : (row[6] || row[5] || today);
-  const base       = new Date(baseDate);
-  const now        = new Date(today);
-  const dayCount   = Math.floor((now - base) / 86400000) + 1;
+  const baseDate = isReentry ? today : (row[6] || row[5] || today);
+  const base     = new Date(baseDate);
+  const now      = new Date(today);
+  const dayCount = Math.floor((now - base) / 86400000) + 1;
 
-  const newPeak        = Math.min(currentPeak, pos);
+  const newPeak          = Math.min(currentPeak, pos);
   const peakDateAchieved = newPeak < currentPeak ? today : (row[3] || today);
 
   const updatedRow = [
-    trackName,
-    artist,
-    newPeak,
-    peakDateAchieved,
-    today,           // Last Seen
-    entryDate,
-    reentryDate,
-    dayCount,
-    pos
+    trackName, artist, newPeak, peakDateAchieved,
+    today, entryDate, reentryDate, dayCount, pos
   ];
 
-  // batchUpdate to overwrite the existing row
-  const rowNumber = existing.idx + 1; // 1-indexed, +1 for header
+  // Update in-memory map
+  existing.row = updatedRow;
+
+  if (existing.idx === -1) return; // Newly inserted this run, appendSheetRow already handled
+
+  const rowNumber = existing.idx + 1;
   await sheets.spreadsheets.values.update({
-    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: `Spotify Korea Chart!A${rowNumber}:I${rowNumber}`,
+    spreadsheetId,
+    range: `${SHEET_NAME}!A${rowNumber}:I${rowNumber}`,
     valueInputOption: 'RAW',
     resource: { values: [updatedRow] }
   });
@@ -194,6 +215,7 @@ async function sendChartPost(post) {
 
   if (response.status === 429) {
     const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
+    console.log(`Rate limited. Waiting ${retryAfter}s...`);
     await new Promise(r => setTimeout(r, retryAfter * 1000));
     await fetch(WEBHOOK, {
       method:  'POST',
@@ -212,9 +234,15 @@ async function sendChartPost(post) {
 async function main() {
   console.log('Starting Spotify Korea daily chart scraper...');
 
-  const sheets       = await getSheetsClient();
+  const sheets = await getSheetsClient();
+
+  // Auto-create sheet if missing
+  await ensureSheet(sheets);
+
+  // Load all data into memory upfront
   const registryData = await getSheetData(sheets, 'Master Registry');
-  const chartData    = await getKoreaChartData(sheets);
+  const chartRawData = await getSheetData(sheets, SHEET_NAME);
+  const chartMap     = buildChartMap(chartRawData);
   const today        = getKSTDateString();
 
   let html;
@@ -244,11 +272,10 @@ async function main() {
       ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
       : '';
 
-    // Determine new / re-entry
-    const existing  = chartData.map[trackName];
+    const existing  = chartMap[trackName];
     const isNew     = !existing;
     const isReentry = !isNew && (() => {
-      const lastSeen = existing.row[4] || '';
+      const lastSeen = (existing.row[4] || '').toString().trim();
       if (!lastSeen) return false;
       const last = new Date(lastSeen);
       const now  = new Date(today);
@@ -257,10 +284,9 @@ async function main() {
 
     const movementStr = formatMovement(track.movement, isNew, isReentry);
 
-    // Compute day count for post
     let dayCount = 1;
     if (!isNew && !isReentry && existing) {
-      const baseDate = existing.row[6] || existing.row[5] || today;
+      const baseDate = (existing.row[6] || existing.row[5] || today).toString().trim();
       const base     = new Date(baseDate);
       const now      = new Date(today);
       dayCount       = Math.floor((now - base) / 86400000) + 1;
@@ -268,18 +294,16 @@ async function main() {
 
     const peak = Math.min(
       track.pos,
-      existing ? parseInt((existing.row[2] || '999').toString(), 10) : track.pos
+      existing ? parseInt((existing.row[2] || '999').toString().replace(/,/g, ''), 10) : track.pos
     );
 
     console.log(`Match: ${trackName} | #${track.pos} ${movementStr} | Day ${dayCount}`);
 
-    // Update sheet
     await upsertKoreaChartRow(
-      sheets, chartData, trackName, track.artist,
+      sheets, chartMap, trackName, track.artist,
       track.pos, peak, isNew, isReentry, today
     );
 
-    // Build and send post
     const post = buildKoreaChartPost(
       memberConfig, trackName, track.pos, movementStr,
       dayCount, peak, spotifyUrl, songHashtags
