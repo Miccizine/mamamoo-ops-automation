@@ -1,11 +1,16 @@
+'use strict';
+
 const {
   getSheetsClient,
   getSheetData,
-  appendSheetRow,
+  batchAppendRows,
   getPHTTimestamp
 } = require('./helpers');
 
 const fetch = require('node-fetch');
+
+// ── Startup jitter — prevents concurrent workflow Sheets quota collisions ─────
+const JITTER_MS = Math.floor(Math.random() * 20000); // 0–20s random delay
 
 // ── RSS Sources ───────────────────────────────────────────────────────────────
 
@@ -87,13 +92,13 @@ async function translateText(text, targetLang = 'EN') {
 
     const data = await response.json();
     return data.translations?.[0]?.text || text;
-  } catch(e) {
+  } catch (e) {
     console.error(`Translation error: ${e.message}`);
     return text;
   }
 }
 
-// ── RSS Parser ────────────────────────────────────────────────────────────────
+// ── RSS Fetch + Parse ─────────────────────────────────────────────────────────
 
 async function fetchRSS(url) {
   try {
@@ -102,7 +107,7 @@ async function fetchRSS(url) {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.text();
-  } catch(e) {
+  } catch (e) {
     console.error(`RSS fetch error for ${url}: ${e.message}`);
     return null;
   }
@@ -119,11 +124,11 @@ function parseRSSItems(xml) {
                      block.match(/<link\s+href="([^"]+)"/))?.[1]?.trim() || '';
     const pubDate = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1]?.trim() || '';
     const rawDesc = (block.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
-                  block.match(/<description>([\s\S]*?)<\/description>/))?.[1] || '';
+                     block.match(/<description>([\s\S]*?)<\/description>/))?.[1] || '';
 
     const desc = rawDesc
-      .replace(/<[^>]+>/g, '')           // strip HTML tags
-      .replace(/&lt;[^&]*&gt;/g, '')     // strip encoded HTML tags
+      .replace(/<[^>]+>/g, '')
+      .replace(/&lt;[^&]*&gt;/g, '')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
@@ -132,9 +137,8 @@ function parseRSSItems(xml) {
       .replace(/&#39;/g, "'")
       .replace(/\s+/g, ' ')
       .trim();
-        
-    if (!title || !link) continue;
 
+    if (!title || !link) continue;
     items.push({ title, link, pubDate, description: desc });
   }
 
@@ -163,13 +167,13 @@ async function sendNewsDiscord(articles) {
   for (const article of articles) {
     const message = {
       embeds: [{
-        title:  `📰 NEWS — Pending Approval`,
+        title:  '📰 NEWS — Pending Approval',
         color:  3447003,
         fields: [
-          { name: '📌 Title',   value: article.title,                                    inline: false },
+          { name: '📌 Title',   value: article.title,                       inline: false },
           { name: '📝 Summary', value: article.summary.substring(0, 500) || 'No summary', inline: false },
-          { name: '🌐 Source',  value: article.source,                                   inline: true  },
-          { name: '🔗 URL',     value: article.url,                                      inline: false }
+          { name: '🌐 Source',  value: article.source,                      inline: true  },
+          { name: '🔗 URL',     value: article.url,                         inline: false }
         ],
         footer: { text: '✅ Approve and post manually to X | ❌ Discard' }
       }]
@@ -182,7 +186,7 @@ async function sendNewsDiscord(articles) {
     });
 
     if (response.status === 429) {
-      const retryAfter = response.headers.get('retry-after') || 5;
+      const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
       console.log(`Rate limited. Waiting ${retryAfter}s...`);
       await new Promise(r => setTimeout(r, retryAfter * 1000));
       await fetch(webhookUrl, {
@@ -203,20 +207,18 @@ async function sendNewsDiscord(articles) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('Starting news pipeline...');
+  console.log(`Starting news pipeline... (jitter delay: ${JITTER_MS}ms)`);
+  await new Promise(r => setTimeout(r, JITTER_MS));
 
   const sheets  = await getSheetsClient();
   const newsLog = await getSheetData(sheets, 'News Log');
-  const sheetId = process.env.GOOGLE_SHEETS_ID;
 
-  // Build set of already logged URLs to avoid duplicates
-  const loggedUrls = new Set();
+  // Build dedup sets from in-memory news log
+  const loggedUrls   = new Set();
+  const loggedTitles = new Set();
+
   for (let i = 1; i < newsLog.length; i++) {
     if (newsLog[i][4]) loggedUrls.add(newsLog[i][4]);
-  }
-
-  const loggedTitles = new Set();
-  for (let i = 1; i < newsLog.length; i++) {
     if (newsLog[i][1]) loggedTitles.add(newsLog[i][1].toLowerCase().trim());
   }
 
@@ -235,11 +237,10 @@ async function main() {
     for (const item of items) {
       if (loggedUrls.has(item.link)) continue;
 
-      // Secondary dedup by normalized title
       const normalizedTitle = item.title.toLowerCase().trim();
       if (loggedTitles.has(normalizedTitle)) continue;
       loggedTitles.add(normalizedTitle);
-      
+
       if (!isRecent(item.pubDate, 24)) continue;
 
       const fullText = `${item.title} ${item.description}`;
@@ -248,7 +249,6 @@ async function main() {
       let title   = item.title;
       let summary = item.description.substring(0, 300);
 
-      // Translate Korean sources
       if (source.language === 'KR') {
         console.log(`  Translating: ${title.substring(0, 50)}...`);
         title   = await translateText(title);
@@ -266,31 +266,19 @@ async function main() {
         'Pending'
       ]);
 
-      newArticles.push({
-        title,
-        summary,
-        source: source.label,
-        url:    item.link
-      });
-
+      newArticles.push({ title, summary, source: source.label, url: item.link });
       loggedUrls.add(item.link);
     }
 
     await new Promise(r => setTimeout(r, 1000));
   }
 
-  // Write to News Log sheet
+  // Batch write to News Log (RAW to avoid number formatting issues)
   if (logBuffer.length > 0) {
     console.log(`Logging ${logBuffer.length} articles...`);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId:    sheetId,
-      range:            'News Log!A:G',
-      valueInputOption: 'USER_ENTERED',
-      resource:         { values: logBuffer }
-    });
+    await batchAppendRows(sheets, 'News Log', logBuffer);
   }
 
-  // Send to Discord
   console.log(`Sending ${newArticles.length} articles to Discord...`);
   await sendNewsDiscord(newArticles);
 
