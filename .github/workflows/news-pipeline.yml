@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Startup jitter
+        run: sleep $((RANDOM % 30))
+
       - name: Run news pipeline
         env:
           DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
