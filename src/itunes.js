@@ -591,6 +591,17 @@ async function main() {
   const isComeback = await getComebackMode(sheets);
   console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
 
+  // Self-gate: 20-min cron exits immediately in normal mode
+  if (!isComeback) {
+    const currentMinute = new Date().getMinutes();
+    const isTwentyMinCron = [15, 35, 55].includes(currentMinute);
+    if (isTwentyMinCron) {
+      console.log('Normal mode — 20-min cron suppressed. Exiting.');
+      return;
+    }
+  }
+  // In normal mode at minute 0: this is the 6-hour cron, proceed normally
+
   // Normal mode: skip if comeback mode is ON (20-min cron handles it)
   if (!isComeback) {
     const hour = getPHTHour();
