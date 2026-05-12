@@ -27,6 +27,10 @@ const RSS_SOURCES = [
     language: 'EN',
     keywords: ['mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa', 'mamamoo+']
   },
+  { 
+    url: 'https://koreajoongangdaily.joins.com/rss/news.xml', 
+    lang: 'EN' 
+  },
   {
     url:      'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
     label:    'Chosun',
