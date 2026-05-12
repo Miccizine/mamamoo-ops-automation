@@ -1,0 +1,33 @@
+name: Korean Charts Scraper
+
+on:
+  schedule:
+    # Realtime: every hour during comeback (script self-gates on isComeback)
+    # Daily: every day at 14:30 KST = 05:30 UTC
+    # Weekly: Monday at 14:00 KST = Monday 05:00 UTC
+    # Run every hour — script decides what to execute based on KST time and mode
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Korean charts scraper
+        env:
+          GOOGLE_SHEETS_ID:          ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          DISCORD_MILESTONE_WEBHOOK: ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+        run: node src/korean-charts.js
