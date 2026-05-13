@@ -303,21 +303,48 @@ function norm(s) {
     .replace(/[^\w\s가-힣]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-function findInRegistry(chartTitle, registryData) {
+function findInRegistry(chartTitle, chartArtist, registryData) {
   const nc = norm(chartTitle);
+  const na = norm(chartArtist);
+
   for (const row of registryData) {
     if (!row[0]) continue;
-    if ((row[11] || '').toLowerCase() === 'no') continue; // Effective Tracking = No
+    if ((row[11] || '').toLowerCase() === 'no') continue;
+
     const nr = norm(row[0]);
-    if (nr === nc || nr.includes(nc) || nc.includes(nr)) {
-      return {
-        memberConfig: getMemberConfig(row),
-        trackName:    row[0],
-        songHashtags: (row[17] || '').trim(),
-      };
+    const nrArtist = norm(row[1] || '');
+
+    // Exact title match — always valid
+    if (nr === nc) {
+      // Also verify artist contains a Mamamoo member name
+      if (isMamamooArtist(nrArtist)) return buildMatch(row);
+      continue;
+    }
+
+    // Partial match only if title is long enough (>= 5 chars)
+    // AND artist field confirms it's Mamamoo-related
+    if (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr))) {
+      if (isMamamooArtist(nrArtist)) return buildMatch(row);
     }
   }
   return null;
+}
+
+const MAMAMOO_ARTISTS = [
+  'mamamoo','마마무','solar','솔라','moonbyul','문별',
+  'wheein','휘인','hwasa','화사','mamamoo+','마마무플러스'
+];
+
+function isMamamooArtist(normalizedArtist) {
+  return MAMAMOO_ARTISTS.some(a => normalizedArtist.includes(a));
+}
+
+function buildMatch(row) {
+  return {
+    memberConfig: getMemberConfig(row),
+    trackName:    row[0],
+    songHashtags: (row[17] || '').trim(),
+  };
 }
 
 // ─── Movement ────────────────────────────────────────────────────────────────
@@ -379,7 +406,7 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
 
   for (const [platform, entries] of chartResults) {
     for (const entry of entries) {
-      const match = findInRegistry(entry.title, registryData);
+      const match = findInRegistry(entry.title, entry.artist, registryData);
       if (!match) continue;
 
       // First pass: upsert with empty movement to get prevPos
