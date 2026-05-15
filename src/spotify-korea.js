@@ -7,8 +7,57 @@ const {
   getMemberConfig,
   buildClosingTags,
   getPHTTimestamp,
-  findMatchInRegistry
 } = require('./helpers');
+
+// ── Registry match with artist verification ───────────────────────────────────
+// findMatchInRegistry from helpers does title-only matching — insufficient.
+// This version cross-checks the chart artist against the registry artist field
+// to prevent false matches (e.g. "I DO ME" by KiiiKiii matching HWASA's registry row).
+
+const MAMAMOO_ARTISTS = [
+  'mamamoo','마마무','solar','솔라','moonbyul','문별',
+  'wheein','휘인','hwasa','화사','mamamoo+','마마무플러스',
+];
+
+function normStr(s) {
+  return s.toLowerCase()
+    .replace(/\(feat\..*?\)/gi, '').replace(/\(ft\..*?\)/gi, '')
+    .replace(/[^\w\s가-힣]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function isMamamooArtist(s) {
+  const n = normStr(s);
+  return MAMAMOO_ARTISTS.some(a => n.includes(a));
+}
+
+function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
+  const nc = normStr(chartTitle);
+  const na = normStr(chartArtist);
+
+  for (const row of registryData) {
+    if (!row[0]) continue;
+    // Skip Effective Tracking = No (col L, index 11)
+    if ((row[11] || '').toLowerCase() === 'no') continue;
+
+    const nr        = normStr(row[0]);
+    const nrArtist  = normStr(row[1] || '');
+
+    // Title must match exactly, or partially only if >= 5 chars
+    const titleMatch = nr === nc ||
+      (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    if (!titleMatch) continue;
+
+    // Registry row must be a Mamamoo artist
+    if (!isMamamooArtist(nrArtist)) continue;
+
+    // Chart artist must ALSO be a Mamamoo artist
+    // This prevents KiiiKiii's "I DO ME" matching HWASA's "I do me - HWASA Solo"
+    if (!isMamamooArtist(na)) continue;
+
+    return { row };
+  }
+  return null;
+}
 
 const fetch = require('node-fetch');
 
@@ -257,7 +306,7 @@ async function main() {
   console.log(`Parsed ${allTracks.length} tracks from Korea daily chart`);
 
   for (const track of allTracks) {
-    const match = findMatchInRegistry(track.title, registryData);
+    const match = findMatchInRegistryVerified(track.title, track.artist, registryData);
     if (!match) continue;
 
     const matchedRow     = match.row;
