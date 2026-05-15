@@ -303,48 +303,51 @@ function norm(s) {
     .replace(/[^\w\s가-힣]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+const MAMAMOO_ARTISTS = [
+  'mamamoo','마마무','solar','솔라','moonbyul','문별',
+  'wheein','휘인','hwasa','화사','mamamoo+','마마무플러스',
+];
+
+function isMamamooArtist(s) {
+  const n = norm(s);
+  return MAMAMOO_ARTISTS.some(a => n.includes(a));
+}
+
+/**
+ * Match chart entry against registry with two-layer artist verification:
+ * 1. Registry row must belong to a Mamamoo artist (col B)
+ * 2. Chart artist must also be a Mamamoo artist
+ * This prevents e.g. KiiiKiii's "I DO ME" matching HWASA's registry row.
+ */
 function findInRegistry(chartTitle, chartArtist, registryData) {
   const nc = norm(chartTitle);
   const na = norm(chartArtist);
 
+  // Chart artist must be Mamamoo-related — fast exit if not
+  if (!isMamamooArtist(na)) return null;
+
   for (const row of registryData) {
     if (!row[0]) continue;
-    if ((row[11] || '').toLowerCase() === 'no') continue;
+    if ((row[11] || '').toLowerCase() === 'no') continue; // Effective Tracking = No
 
-    const nr = norm(row[0]);
+    const nr       = norm(row[0]);
     const nrArtist = norm(row[1] || '');
 
-    // Exact title match — always valid
-    if (nr === nc) {
-      // Also verify artist contains a Mamamoo member name
-      if (isMamamooArtist(nrArtist)) return buildMatch(row);
-      continue;
-    }
+    // Registry row must be a Mamamoo artist
+    if (!isMamamooArtist(nrArtist)) continue;
 
-    // Partial match only if title is long enough (>= 5 chars)
-    // AND artist field confirms it's Mamamoo-related
-    if (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr))) {
-      if (isMamamooArtist(nrArtist)) return buildMatch(row);
-    }
+    // Exact match always valid; partial only if title >= 5 chars
+    const titleMatch = nr === nc ||
+      (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    if (!titleMatch) continue;
+
+    return {
+      memberConfig: getMemberConfig(row),
+      trackName:    row[0],
+      songHashtags: (row[17] || '').trim(),
+    };
   }
   return null;
-}
-
-const MAMAMOO_ARTISTS = [
-  'mamamoo','마마무','solar','솔라','moonbyul','문별',
-  'wheein','휘인','hwasa','화사','mamamoo+','마마무플러스'
-];
-
-function isMamamooArtist(normalizedArtist) {
-  return MAMAMOO_ARTISTS.some(a => normalizedArtist.includes(a));
-}
-
-function buildMatch(row) {
-  return {
-    memberConfig: getMemberConfig(row),
-    trackName:    row[0],
-    songHashtags: (row[17] || '').trim(),
-  };
 }
 
 // ─── Movement ────────────────────────────────────────────────────────────────
