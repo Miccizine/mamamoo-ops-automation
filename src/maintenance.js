@@ -24,7 +24,7 @@ async function processMilestonesSheet(sheets) {
     const rowIndex    = i; // 0-based for API
     const hasDate     = row[0] && row[0] !== '';
     const hasCheckbox = row[7] !== '' && row[7] !== undefined;
-    const isPublished = row[7] === true || row[7] === 'TRUE';
+    const isPublished = (row[7] === true || row[7] === 'TRUE') && (row[8] && row[8] !== '');
     const hasGrayBg   = row[8] && row[8] !== '';
 
     // Add checkbox if row has data but no checkbox yet
