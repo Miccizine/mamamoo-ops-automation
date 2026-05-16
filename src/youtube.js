@@ -9,7 +9,8 @@ const {
   getComebackMode,
   getPHTTimestamp,
   buildClosingTags,
-  formatMilestoneNumber
+  formatMilestoneNumber,
+  songHashtags
 } = require('./helpers');
 
 const fetch = require('node-fetch');
@@ -102,7 +103,7 @@ async function persistMilestone(sheets, trackName, album, platform, milestoneVal
 
 // ── Build milestone Discord embed ─────────────────────────────────────────────
 
-function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, sourceUrl) {
+function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, sourceUrl, songHashtags) {
   const closingTags    = buildClosingTags(config);
   const formattedViews = formatMilestoneNumber(views);
   const formattedLikes = formatLikesDisplay(likes);
@@ -117,6 +118,7 @@ function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, 
   }
 
   const tweetLines = ['[MV MILESTONE] 🔥', '', sentence, '', `🔗 ${sourceUrl}`, ''];
+  if (songHashtags) tweetLines.push(songHashtags);
   if (config.tags) tweetLines.push(config.tags);
   tweetLines.push(closingTags);
 
@@ -179,7 +181,7 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
     if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', viewMilestone, countType)) {
       cacheMilestone(existingMilestones, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
       await persistMilestone(sheets, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
-      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, likeCount, countType, primaryUrl);
+      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, likeCount, countType, primaryUrl, songHashtags);
       await sendToMilestoneWebhook(embed);
       viewMilestoneFired = true;
       console.log(`View milestone: ${trackName} | ${viewMilestone} | ${countType}`);
@@ -187,13 +189,13 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
   }
 
   // ── Likes milestone (100K intervals, skip if view milestone fired) ────────
-  if (!viewMilestoneFired) {
+  if (viewMilestoneFired || isComeback) {
     const likeMilestone = getLastMilestone(likeCount, 100000);
     if (likeMilestone > 0) {
       if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', likeMilestone, 'Likes')) {
         cacheMilestone(existingMilestones, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
         await persistMilestone(sheets, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
-        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewCount, likeMilestone, 'Likes', primaryUrl);
+        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewCount, likeMilestone, 'Likes', primaryUrl, track.songHashtags);
         await sendToMilestoneWebhook(embed);
         console.log(`Likes milestone: ${trackName} | ${likeMilestone}`);
       }
@@ -411,7 +413,7 @@ async function main() {
         if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', milestone1M, countType)) {
           cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', milestone1M, countType, track.primaryUrl);
           await persistMilestone(sheets, track.trackName, track.album, 'YouTube', milestone1M, countType, track.primaryUrl);
-          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, likeCount, countType, track.primaryUrl);
+          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, likeCount, countType, track.primaryUrl, track.songHashtags);
           await sendToMilestoneWebhook(embed);
           viewMilestoneFired = true;
           console.log(`Comeback 1M milestone: ${track.trackName} | ${milestone1M}`);
@@ -419,13 +421,13 @@ async function main() {
       }
 
       // Likes milestone (skip if view milestone fired)
-      if (!viewMilestoneFired) {
+      if (viewMilestoneFired || isComeback) {
         const likeMilestone = getLastMilestone(likeCount, 100000);
         if (likeMilestone > 0) {
           if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', likeMilestone, 'Likes')) {
             cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
             await persistMilestone(sheets, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
-            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, viewCount, likeMilestone, 'Likes', track.primaryUrl);
+            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, viewCount, likeMilestone, 'Likes', track.primaryUrl, track.songHashtags);
             await sendToMilestoneWebhook(embed);
             console.log(`Likes milestone: ${track.trackName} | ${likeMilestone}`);
           }
