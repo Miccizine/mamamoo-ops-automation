@@ -464,7 +464,8 @@ async function main() {
           await persistMilestone(sheets, trackName, album, 'Spotify', lastMilestone, 'Streams', spotifyUrl);
           milestones.push({
             trackName, album, platform: 'Spotify', milestone: lastMilestone,
-            countType: 'Streams', sourceUrl: spotifyUrl, memberConfig
+            countType: 'Streams', sourceUrl: spotifyUrl, memberConfig,
+            songHashtags: (matchedRow[17] || '').trim()
           });
         }
       }
