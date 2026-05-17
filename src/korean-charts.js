@@ -469,7 +469,7 @@ async function sendChartDraft(match, label, entries) {
     ? songHashtags.split('\n').map(h => h.trim()).filter(Boolean).join(' ')
     : '';
   const closingTags = memberConfig.label
-    ? `#마마무 #mamamoo\n${memberConfig.label}`
+    ? `#마마무 #MAMAMOO\n${memberConfig.label}`
     : '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
 
   const buildBody = (lines) => {
