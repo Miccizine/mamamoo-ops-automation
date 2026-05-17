@@ -9,8 +9,7 @@ const {
   getComebackMode,
   getPHTTimestamp,
   buildClosingTags,
-  formatMilestoneNumber,
-  songHashtags
+  formatMilestoneNumber
 } = require('./helpers');
 
 const fetch = require('node-fetch');
