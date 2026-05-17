@@ -159,7 +159,7 @@ async function sendToMilestoneWebhook(payload) {
 
 // ── Process milestones for a single track (normal + non-comeback tracks) ──────
 
-async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, urls, stats, rawLogBuffer) {
+async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, urls, stats, rawLogBuffer, songHashtags, isComeback) {
   const primaryUrl  = urls.primary;
   const hasCombined = stats.combined !== null;
   const viewCount   = hasCombined ? stats.combined : stats.primary.views;
@@ -390,7 +390,7 @@ async function main() {
       const stats = { primary: primaryStats, combined: combinedViews };
 
       if (track.trackName !== comebackTrack) {
-        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer);
+        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, isComeback);
         continue;
       }
 
@@ -478,10 +478,8 @@ async function main() {
 
       const stats = { primary: primaryStats, combined: combinedViews };
 
-      await processMilestones(
-        sheets, existingMilestones, track.trackName, track.album,
-        track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer
-      );
+      await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, 
+        { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, isComeback);
     }
   }
 
