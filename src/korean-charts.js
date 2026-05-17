@@ -125,6 +125,7 @@ async function scrapeGuysome(slug, dateStr, hour) {
     }
 
     return { rank, title, artist, htmlMovement, isNew, isReNew: false };
+    console.log(`Chart artist: "${entry.artist}" | title: "${entry.title}"`);
   }).filter(e => e.rank !== null && e.title);
 }
 
@@ -324,7 +325,7 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
   const na = norm(chartArtist);
 
   // Chart artist must be Mamamoo-related — fast exit if not
-  if (!isMamamooArtist(na)) return null;
+  if (!na || !isMamamooArtist(na)) return null;
 
   for (const row of registryData) {
     if (!row[0]) continue;
