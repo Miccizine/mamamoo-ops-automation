@@ -176,7 +176,7 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
   const viewMilestone = getLastMilestone(viewCount, viewInterval);
   let viewMilestoneFired = false;
 
-  if (viewMilestone > 0) {
+  if (!viewMilestoneFired) {
     if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', viewMilestone, countType)) {
       cacheMilestone(existingMilestones, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
       await persistMilestone(sheets, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
