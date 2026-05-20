@@ -332,6 +332,8 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     if ((row[11] || '').toLowerCase() === 'no') continue; // Effective Tracking = No
 
     const nr       = norm(row[0]);
+    // Skip if normalized registry title is empty (e.g. pure CJK stripped)
+    if (!nr) continue;
     const nrArtist = norm(row[1] || '');
 
     // Registry row must be a Mamamoo artist
@@ -340,8 +342,6 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     // Exact match always valid; partial only if title >= 5 chars
     const titleMatch = nr === nc ||
       (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
-    // Skip if normalized registry title is empty (e.g. pure CJK stripped)
-    if (!nr) continue;
     if (!titleMatch) continue;
 
     return {
