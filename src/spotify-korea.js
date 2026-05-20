@@ -40,6 +40,8 @@ function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
     if ((row[11] || '').toLowerCase() === 'no') continue;
 
     const nr        = normStr(row[0]);
+    // Skip if normalized registry title is empty
+    if (!nr) continue;
     const nrArtist  = normStr(row[1] || '');
 
     // Title must match exactly, or partially only if >= 5 chars
