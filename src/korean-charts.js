@@ -351,6 +351,10 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
   return null;
 }
 
+// ─── Debug ──────────────────────────────────────────────────────────
+
+if (match) console.log(`MATCH: chart="${entry.title}" artist="${entry.artist}" → registry="${match.trackName}"`);
+
 // ─── Movement ────────────────────────────────────────────────────────────────
 
 function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
