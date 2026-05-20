@@ -340,6 +340,8 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     // Exact match always valid; partial only if title >= 5 chars
     const titleMatch = nr === nc ||
       (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    // Skip if normalized registry title is empty (e.g. pure CJK stripped)
+    if (!nr) continue;
     if (!titleMatch) continue;
 
     return {
