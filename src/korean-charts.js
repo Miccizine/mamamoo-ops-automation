@@ -351,10 +351,6 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
   return null;
 }
 
-// ─── Debug ──────────────────────────────────────────────────────────
-
-if (match) console.log(`MATCH: chart="${entry.title}" artist="${entry.artist}" → registry="${match.trackName}"`);
-
 // ─── Movement ────────────────────────────────────────────────────────────────
 
 function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
@@ -415,6 +411,7 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
   for (const [platform, entries] of chartResults) {
     for (const entry of entries) {
       const match = findInRegistry(entry.title, entry.artist, registryData);
+      if (match) console.log(`MATCH: chart="${entry.title}" artist="${entry.artist}" → registry="${match.trackName}"`);
       if (!match) continue;
 
       // First pass: upsert with empty movement to get prevPos
