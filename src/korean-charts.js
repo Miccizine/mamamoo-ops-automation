@@ -337,7 +337,8 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     if (!isMamamooArtist(nrArtist)) continue;
 
     // Exact match always valid; partial only if both titles >= 5 chars
-    const titleMatch = nr === nc || (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    const titleMatch = nr === nc ||
+      (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
 
     return {
@@ -374,9 +375,7 @@ function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
 function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, rank, movementStr, dateStr) {
   const key = `${trackName}|${platform}|${chartType}`;
   const ex  = trackerMap.get(key);
-  // Only flag NEW PEAK when we have a previous peak to compare against.
-  // On fresh sheet or first entry, skip — we can't verify historical peak.
-  const isNewPeak = ex !== undefined && ex.peakPos !== null && rank < ex.peakPos;
+  const isNewPeak = ex != null && ex.peakPos !== null && rank < ex.peakPos;
 
   // Re-entry: previously seen, then gap > 25h, now charting again
   let reentryDate = ex ? ex.reentryDate : '';
@@ -392,8 +391,8 @@ function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, ran
     trackName, platform, chartType,
     currentPos: rank,
     movement:   movementStr,
-    peakPos:    isNewPeak ? rank : ex.peakPos,
-    peakDate:   isNewPeak ? dateStr : ex.peakDate,
+    peakPos:    isNewPeak ? rank : (ex ? ex.peakPos : rank),
+    peakDate:   isNewPeak ? dateStr : (ex ? ex.peakDate : dateStr),
     entryDate:  ex ? ex.entryDate : dateStr,
     lastSeen:   getKSTTimestamp(),
     reentryDate,
