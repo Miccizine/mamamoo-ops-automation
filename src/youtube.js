@@ -188,7 +188,7 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
   }
 
   // ── Likes milestone (100K intervals, skip if view milestone fired) ────────
-  if (viewMilestoneFired || isComeback) {
+  if (!viewMilestoneFired && isComeback) {
     const likeMilestone = getLastMilestone(likeCount, 100000);
     if (likeMilestone > 0) {
       if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', likeMilestone, 'Likes')) {
@@ -385,7 +385,7 @@ async function main() {
     for (const track of trackQueue) {
       const primaryStats   = statsMap[track.primaryId]   || { views: 0, likes: 0 };
       const secondaryStats = track.hasCombined ? (statsMap[track.secondaryId] || { views: 0, likes: 0 }) : null;
-      const combinedViews  = secondaryStats ? primaryStats.views + secondaryStats.views : null;
+      const combinedViews = (secondaryStats && secondaryStats.views > 0 && primaryStats.views > 0) ? primaryStats.views + secondaryStats.views: null;
 
       const stats = { primary: primaryStats, combined: combinedViews };
 
