@@ -91,7 +91,7 @@ function getMemberConfig(row) {
       activeMembers.includes('moonbyul')) {
     return {
       handle: 'MAMAMOO+',
-      tags:   '#MAMAMOOplus #마마무플러스\n#SOLAR #솔라 #MOONBYUL 문별',
+      tags:   '#MAMAMOOplus #마마무플러스\n#SOLAR #솔라 #MOONBYUL #문별',
       label:  '@RBW_MAMAMOO'
     };
   }
