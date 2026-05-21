@@ -46,17 +46,13 @@ function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
 
     // Title must match exactly, or partially only if >= 5 chars
     const titleMatch = nr === nc ||
-      (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
-
-    // DEBUG — remove after confirming
-    console.log(`TITLE MATCH: chart="${nc}" chartArtist="${na}" → registry="${nr}" regArtist="${nrArtist}" | chartIsMamamoo=${isMamamooArtist(na)}`);
 
     // Registry row must be a Mamamoo artist
     if (!isMamamooArtist(nrArtist)) continue;
 
     // Chart artist must ALSO be a Mamamoo artist
-    // This prevents KiiiKiii's "I DO ME" matching HWASA's "I do me - HWASA Solo"
     if (!isMamamooArtist(na)) continue;
 
     return { row };
