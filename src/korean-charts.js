@@ -340,8 +340,7 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     if (!isMamamooArtist(nrArtist)) continue;
 
     // Exact match always valid; partial only if title >= 5 chars
-    const titleMatch = nr === nc ||
-      (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    const titleMatch = nr === nc || (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
 
     return {
