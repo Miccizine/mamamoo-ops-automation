@@ -9,10 +9,15 @@ const {
   getPHTTimestamp,
 } = require('./helpers');
 
+const fetch = require('node-fetch');
+
+const DAILY_URL  = 'https://kworb.net/spotify/country/kr_daily.html';
+const WEBHOOK    = process.env.DISCORD_MILESTONE_WEBHOOK;
+const COLOR      = 1947988;
+const SHEET_NAME = 'Spotify Korea Chart';
+const HEADERS    = ['Track Name', 'Artist', 'Peak Position', 'Date Achieved', 'Last Seen', 'Entry Date', 'Re-entry Date', 'Current Day Count', 'Current Position'];
+
 // ── Registry match with artist verification ───────────────────────────────────
-// findMatchInRegistry from helpers does title-only matching — insufficient.
-// This version cross-checks the chart artist against the registry artist field
-// to prevent false matches (e.g. "I DO ME" by KiiiKiii matching HWASA's registry row).
 
 const MAMAMOO_ARTISTS = [
   'mamamoo','마마무','solar','솔라','moonbyul','문별',
@@ -34,72 +39,48 @@ function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
   const nc = normStr(chartTitle);
   const na = normStr(chartArtist);
 
+  // Chart artist must be Mamamoo-related — fast exit if not
+  if (!na || !isMamamooArtist(na)) return null;
+
   for (const row of registryData) {
     if (!row[0]) continue;
-    // Skip Effective Tracking = No (col L, index 11)
     if ((row[11] || '').toLowerCase() === 'no') continue;
 
-    const nr        = normStr(row[0]);
-    // Skip if normalized registry title is empty
-    if (!nr) continue;
-    const nrArtist  = normStr(row[1] || '');
+    const nr       = normStr(row[0]);
+    if (!nr) continue; // skip empty normalized titles (e.g. pure CJK)
 
-    // Title must match exactly, or partially only if >= 5 chars
-    const titleMatch = nr === nc ||
-    (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
-    if (!titleMatch) continue;
-
-    // Registry row must be a Mamamoo artist
+    const nrArtist = normStr(row[1] || '');
     if (!isMamamooArtist(nrArtist)) continue;
 
-    // Chart artist must ALSO be a Mamamoo artist
-    if (!isMamamooArtist(na)) continue;
+    // Exact match, or partial only if both titles >= 5 chars
+    const titleMatch = nr === nc ||
+      (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    if (!titleMatch) continue;
 
     return { row };
   }
   return null;
 }
 
-const fetch = require('node-fetch');
-
-const DAILY_URL = 'https://kworb.net/spotify/country/kr_daily.html';
-const WEBHOOK   = process.env.DISCORD_MILESTONE_WEBHOOK;
-const COLOR     = 1947988;
-const SHEET_NAME = 'Spotify Korea Chart';
-const HEADERS   = ['Track Name', 'Artist', 'Peak Position', 'Date Achieved', 'Last Seen', 'Entry Date', 'Re-entry Date', 'Current Day Count', 'Current Position'];
-
-// ── Ensure sheet exists, create with headers if not ──────────────────────────
+// ── Ensure sheet exists ───────────────────────────────────────────────────────
 
 async function ensureSheet(sheets) {
   const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-
-  // Get all existing sheet names
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const meta     = await sheets.spreadsheets.get({ spreadsheetId });
   const existing = meta.data.sheets.map(s => s.properties.title);
-
   if (existing.includes(SHEET_NAME)) return;
 
   console.log(`Sheet "${SHEET_NAME}" not found — creating...`);
-
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
-    resource: {
-      requests: [{
-        addSheet: {
-          properties: { title: SHEET_NAME }
-        }
-      }]
-    }
+    resource: { requests: [{ addSheet: { properties: { title: SHEET_NAME } } }] }
   });
-
-  // Write headers
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${SHEET_NAME}!A1:I1`,
     valueInputOption: 'RAW',
     resource: { values: [HEADERS] }
   });
-
   console.log(`Sheet "${SHEET_NAME}" created with headers.`);
 }
 
@@ -130,9 +111,9 @@ function parseKoreaChart(html) {
     const pos = parseInt(cells[0], 10);
     if (isNaN(pos)) continue;
 
-    const movement    = (cells[1] || '').trim();
+    const movement    = (cells[1] || '').trim(); // numeric, "RE", "NEW", "="
     const artistTitle = cells[2] || '';
-    const days        = parseInt(cells[3], 10) || 1;
+    const days        = parseInt(cells[3], 10) || 1; // kworb Days column
     const peak        = parseInt(cells[4], 10) || pos;
     const streams     = parseInt((cells[5] || '').replace(/,/g, ''), 10) || 0;
 
@@ -151,7 +132,7 @@ function parseKoreaChart(html) {
 
 function formatMovement(raw, isNew, isReentry) {
   if (isNew)     return '(NEW)';
-  if (isReentry) return '(RE-ENTRY)';
+  if (isReentry) return '(Re-entry)';
   const n = parseInt(raw, 10);
   if (isNaN(n) || n === 0) return '(=)';
   return n > 0 ? `(+${n})` : `(${n})`;
@@ -176,15 +157,15 @@ function buildChartMap(data) {
 
 // ── Upsert row in Spotify Korea Chart ────────────────────────────────────────
 
-async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, peak, isNew, isReentry, today) {
+async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, peak, days, isNew, isReentry, today) {
   const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
   const existing      = chartMap[trackName];
 
   if (!existing) {
     await appendSheetRow(sheets, SHEET_NAME, [
-      trackName, artist, peak, today, today, today, '', 1, pos
+      trackName, artist, peak, today, today, today, '', days, pos
     ]);
-    chartMap[trackName] = { idx: -1, row: [trackName, artist, peak, today, today, today, '', 1, pos] };
+    chartMap[trackName] = { idx: -1, row: [trackName, artist, peak, today, today, today, '', days, pos] };
     return;
   }
 
@@ -192,11 +173,11 @@ async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, pea
   const currentPeak = parseInt((row[2] || '999').toString().replace(/,/g, ''), 10);
   const entryDate   = isReentry ? today : (row[5] || today);
   const reentryDate = isReentry ? today : (row[6] || '');
-  const newPeak     = Math.min(currentPeak, peak); // use kworb peak, not just pos
+  const newPeak     = Math.min(currentPeak, peak);
   const peakDate    = newPeak < currentPeak ? today : (row[3] || today);
 
-  // Day count from kworb days field is authoritative
-  const dayCount = isReentry ? 1 : track.days; // track not in scope here — pass days as param
+  // Use kworb days as source of truth — reliable even after sheet clears
+  const dayCount = isReentry ? 1 : days;
 
   const updatedRow = [
     trackName, artist, newPeak, peakDate,
@@ -280,11 +261,8 @@ async function main() {
   console.log('Starting Spotify Korea daily chart scraper...');
 
   const sheets = await getSheetsClient();
-
-  // Auto-create sheet if missing
   await ensureSheet(sheets);
 
-  // Load all data into memory upfront
   const registryData = await getSheetData(sheets, 'Master Registry');
   const chartRawData = await getSheetData(sheets, SHEET_NAME);
   const chartMap     = buildChartMap(chartRawData);
@@ -317,29 +295,25 @@ async function main() {
       ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
       : '';
 
-    const existing  = chartMap[trackName];
-    // Trust kworb over sheet state — days/movement are authoritative
+    // Use kworb data as source of truth for entry state
     const isNew     = track.days === 1 && track.movement !== 'RE';
     const isReentry = track.movement === 'RE';
+
     const movementStr = formatMovement(track.movement, isNew, isReentry);
 
-    let dayCount = 1;
-    if (!isNew && !isReentry && existing) {
-      const baseDate = (existing.row[6] || existing.row[5] || today).toString().trim();
-      const base     = new Date(baseDate);
-      const now      = new Date(today);
-      dayCount       = Math.floor((now - base) / 86400000) + 1;
-    }
+    // Day count from kworb is authoritative — survives sheet clears
+    const dayCount = isReentry ? 1 : track.days;
 
-    const peak = Math.min(
-      track.pos,
-      existing ? parseInt((existing.row[2] || '999').toString().replace(/,/g, ''), 10) : track.pos
-    );
+    // Peak: best of kworb peak and sheet peak
+    const existing    = chartMap[trackName];
+    const sheetPeak   = existing ? parseInt((existing.row[2] || '999').toString().replace(/,/g, ''), 10) : 999;
+    const peak        = Math.min(track.peak, sheetPeak);
 
     console.log(`Match: ${trackName} | #${track.pos} ${movementStr} | Day ${dayCount}`);
 
     await upsertKoreaChartRow(
-      sheets, chartMap, trackName, track.artist, track.pos, track.peak, days, isNew, isReentry, today
+      sheets, chartMap, trackName, track.artist,
+      track.pos, peak, track.days, isNew, isReentry, today
     );
 
     const post = buildKoreaChartPost(
