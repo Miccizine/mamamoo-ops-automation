@@ -321,8 +321,6 @@ async function main() {
     // Trust kworb over sheet state — days/movement are authoritative
     const isNew     = track.days === 1 && track.movement !== 'RE';
     const isReentry = track.movement === 'RE';
-    ();
-
     const movementStr = formatMovement(track.movement, isNew, isReentry);
 
     let dayCount = 1;
