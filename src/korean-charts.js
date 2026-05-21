@@ -457,7 +457,7 @@ async function sendToDiscord(payload) {
 
 async function sendChartDraft(match, label, entries) {
   const { memberConfig, trackName, songHashtags } = match;
-  const header = `${memberConfig.handle}'s '${trackName}' ${label}`;
+  const header = `${memberConfig.handle}'s '${trackName}' — ${label}`;
 
   let chartLines = entries.map(e => {
     let line = `#${e.rank} ${PLATFORM_LABEL[e.platform]} ${e.movementStr}`;
