@@ -91,7 +91,7 @@ function getMemberConfig(row) {
       activeMembers.includes('moonbyul')) {
     return {
       handle: 'MAMAMOO+',
-      tags:   '#MAMAMOOplus #마마무플러스\n#SOLAR #솔라\n#MOONBYUL 문별',
+      tags:   '#MAMAMOOplus #마마무플러스\n#SOLAR #솔라 #MOONBYUL 문별',
       label:  '@RBW_MAMAMOO'
     };
   }
@@ -108,7 +108,7 @@ function getMemberConfig(row) {
 function buildClosingTags(config) {
   const isGroup = config.handle === '#MAMAMOO';
   if (isGroup) return '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
-  return `#마마무 #MAMAMOO\n${config.label}`;
+  return `#마마무 ${config.label}`;
 }
 
 // ── Milestone Helpers ─────────────────────────────────────────────────────────
