@@ -130,8 +130,9 @@ function parseKoreaChart(html) {
     const pos = parseInt(cells[0], 10);
     if (isNaN(pos)) continue;
 
-    const movement    = cells[1] || '0';
+    const movement    = (cells[1] || '').trim();
     const artistTitle = cells[2] || '';
+    const days        = parseInt(cells[3], 10) || 1;
     const peak        = parseInt(cells[4], 10) || pos;
     const streams     = parseInt((cells[5] || '').replace(/,/g, ''), 10) || 0;
 
@@ -140,7 +141,7 @@ function parseKoreaChart(html) {
     const artist = artistTitle.substring(0, dashIdx).trim();
     const title  = artistTitle.substring(dashIdx + 3).trim();
 
-    tracks.push({ pos, movement, artist, title, peak, streams });
+    tracks.push({ pos, movement, artist, title, peak, streams, days });
   }
 
   return tracks;
@@ -181,35 +182,29 @@ async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, pea
 
   if (!existing) {
     await appendSheetRow(sheets, SHEET_NAME, [
-      trackName, artist, pos, today, today, today, '', 1, pos
+      trackName, artist, peak, today, today, today, '', 1, pos
     ]);
-    // Add to in-memory map to prevent double-inserts in same run
-    chartMap[trackName] = { idx: -1, row: [trackName, artist, pos, today, today, today, '', 1, pos] };
+    chartMap[trackName] = { idx: -1, row: [trackName, artist, peak, today, today, today, '', 1, pos] };
     return;
   }
 
   const row         = existing.row;
   const currentPeak = parseInt((row[2] || '999').toString().replace(/,/g, ''), 10);
-  const entryDate   = row[5] || today;
+  const entryDate   = isReentry ? today : (row[5] || today);
   const reentryDate = isReentry ? today : (row[6] || '');
+  const newPeak     = Math.min(currentPeak, peak); // use kworb peak, not just pos
+  const peakDate    = newPeak < currentPeak ? today : (row[3] || today);
 
-  const baseDate = isReentry ? today : (row[6] || row[5] || today);
-  const base     = new Date(baseDate);
-  const now      = new Date(today);
-  const dayCount = Math.floor((now - base) / 86400000) + 1;
-
-  const newPeak          = Math.min(currentPeak, pos);
-  const peakDateAchieved = newPeak < currentPeak ? today : (row[3] || today);
+  // Day count from kworb days field is authoritative
+  const dayCount = isReentry ? 1 : track.days; // track not in scope here — pass days as param
 
   const updatedRow = [
-    trackName, artist, newPeak, peakDateAchieved,
+    trackName, artist, newPeak, peakDate,
     today, entryDate, reentryDate, dayCount, pos
   ];
 
-  // Update in-memory map
   existing.row = updatedRow;
-
-  if (existing.idx === -1) return; // Newly inserted this run, appendSheetRow already handled
+  if (existing.idx === -1) return;
 
   const rowNumber = existing.idx + 1;
   await sheets.spreadsheets.values.update({
@@ -323,14 +318,10 @@ async function main() {
       : '';
 
     const existing  = chartMap[trackName];
-    const isNew     = !existing;
-    const isReentry = !isNew && (() => {
-      const lastSeen = (existing.row[4] || '').toString().trim();
-      if (!lastSeen) return false;
-      const last = new Date(lastSeen);
-      const now  = new Date(today);
-      return Math.floor((now - last) / 86400000) > 1;
-    })();
+    // Trust kworb over sheet state — days/movement are authoritative
+    const isNew     = track.days === 1 && track.movement !== 'RE';
+    const isReentry = track.movement === 'RE';
+    )();
 
     const movementStr = formatMovement(track.movement, isNew, isReentry);
 
@@ -350,8 +341,7 @@ async function main() {
     console.log(`Match: ${trackName} | #${track.pos} ${movementStr} | Day ${dayCount}`);
 
     await upsertKoreaChartRow(
-      sheets, chartMap, trackName, track.artist,
-      track.pos, peak, isNew, isReentry, today
+      sheets, chartMap, trackName, track.artist, track.pos, track.peak, days, isNew, isReentry, today
     );
 
     const post = buildKoreaChartPost(
