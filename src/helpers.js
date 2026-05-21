@@ -39,7 +39,7 @@ async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
     range: `${sheetName}!A:Z`,
-    valueInputOption: 'RAW',        // ← was USER_ENTERED
+    valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     resource: { values: [row] }
   });
@@ -50,7 +50,7 @@ async function batchAppendRows(sheets, sheetName, rows) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
     range: `${sheetName}!A:Z`,
-    valueInputOption: 'RAW',        // ← was USER_ENTERED
+    valueInputOption: 'RAW',
     resource: { values: rows }
   });
 }
@@ -95,7 +95,7 @@ function getMemberConfig(row) {
       label:  '@RBW_MAMAMOO'
     };
   }
-  
+
   // Unit — combine handles, tags per line, labels deduplicated
   const handles = activeMembers.map(m => memberTags[m].handle).join(' & ');
   const tags    = activeMembers.map(m => memberTags[m].tags).join('\n');
@@ -139,7 +139,7 @@ function buildMilestoneSentence(config, trackName, formattedMilestone, platform,
 // ── Milestone Detection ───────────────────────────────────────────────────────
 
 async function checkMilestone(sheets, trackName, album, platform, countType, currentCount, sourceUrl, memberConfig) {
-  const interval = 10000000; // YouTube now handled directly in youtube.js
+  const interval = 10000000;
   const lastMilestone = Math.floor(currentCount / interval) * interval;
   if (lastMilestone === 0) return null;
 
@@ -201,7 +201,7 @@ async function sendDiscordDraft(milestones) {
     ];
 
     if (m.songHashtags) tweetLines.push(m.songHashtags);
-    if (config.tags) tweetLines.push(config.tags);
+    if (config.tags)    tweetLines.push(config.tags);
     tweetLines.push(closingTags);
 
     const draftTweet = tweetLines.join('\n').trim();
@@ -280,24 +280,35 @@ function normalizeTitle(title) {
     .trim();
 }
 
+// ── Registry Match ────────────────────────────────────────────────────────────
+//
+// Two-pass: exact match first, then partial.
+// Partial match requires both normalized titles to be >= 5 chars to prevent
+// short registry titles ("O", "NA", "EGO", "HIP") from matching any chart
+// title containing those substrings. Empty normalized titles are skipped.
+
 function findMatchInRegistry(kworbTitle, registryData) {
   const normalizedKworb = normalizeTitle(kworbTitle);
 
+  // Pass 1: exact match
   for (let i = 1; i < registryData.length; i++) {
-    const registryTitle = registryData[i][0] ? registryData[i][0].toString() : '';
-    if (normalizeTitle(registryTitle) === normalizedKworb) {
+    const registryTitle      = registryData[i][0] ? registryData[i][0].toString() : '';
+    const normalizedRegistry = normalizeTitle(registryTitle);
+    if (!normalizedRegistry) continue;
+    if (normalizedRegistry === normalizedKworb) {
       return { rowIndex: i, row: registryData[i], matchType: 'exact' };
     }
   }
 
+  // Pass 2: partial match — both sides must be >= 5 chars
   for (let i = 1; i < registryData.length; i++) {
     const registryTitle      = registryData[i][0] ? registryData[i][0].toString() : '';
     const normalizedRegistry = normalizeTitle(registryTitle);
     if (!normalizedRegistry) continue;
     if (normalizedRegistry.length >= 5 && normalizedKworb.length >= 5 &&
-      (normalizedKworb.includes(normalizedRegistry) ||
-       normalizedRegistry.includes(normalizedKworb))) {
-    return { rowIndex: i, row: registryData[i], matchType: 'partial' };
+        (normalizedKworb.includes(normalizedRegistry) ||
+         normalizedRegistry.includes(normalizedKworb))) {
+      return { rowIndex: i, row: registryData[i], matchType: 'partial' };
     }
   }
 
@@ -310,14 +321,12 @@ async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
   const sheetId   = process.env.GOOGLE_SHEETS_ID;
   const flagsData = await getSheetData(sheets, 'New Release Flags');
 
-  // Check if already flagged to avoid duplicates
   for (let i = 1; i < flagsData.length; i++) {
     if (normalizeTitle(flagsData[i][1] || '') === normalizeTitle(trackName)) {
-      return; // Already flagged
+      return;
     }
   }
 
-  // Write to New Release Flags sheet
   await appendSheetRow(sheets, 'New Release Flags', [
     getPHTTimestamp(),
     trackName,
@@ -327,7 +336,6 @@ async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
     'Pending'
   ]);
 
-  // Send Discord alert
   const webhookUrl = process.env.DISCORD_FLAGS_WEBHOOK;
   if (!webhookUrl) return;
 
@@ -336,10 +344,10 @@ async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
       title: '🆕 NEW RELEASE DETECTED — Needs Review',
       color: 16776960,
       fields: [
-        { name: '🎵 Track',  value: trackName,       inline: true },
+        { name: '🎵 Track',  value: trackName,           inline: true },
         { name: '🎤 Artist', value: artist || 'Unknown', inline: true },
-        { name: '📊 Source', value: source,           inline: true },
-        { name: '🔗 URL',    value: sourceUrl,        inline: false }
+        { name: '📊 Source', value: source,               inline: true },
+        { name: '🔗 URL',    value: sourceUrl,            inline: false }
       ],
       description: 'This track appeared on a chart but is not in the Master Registry.\nReview and add manually if relevant.',
       footer: { text: '✅ Add to Registry | ❌ Mark as Not Relevant' }
@@ -352,7 +360,6 @@ async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(message)
     });
-
     if (response.status === 429) {
       const retryAfter = response.headers.get('retry-after') || 5;
       await new Promise(r => setTimeout(r, retryAfter * 1000));
