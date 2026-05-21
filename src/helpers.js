@@ -291,11 +291,13 @@ function findMatchInRegistry(kworbTitle, registryData) {
   }
 
   for (let i = 1; i < registryData.length; i++) {
-    const registryTitle = registryData[i][0] ? registryData[i][0].toString() : '';
+    const registryTitle      = registryData[i][0] ? registryData[i][0].toString() : '';
     const normalizedRegistry = normalizeTitle(registryTitle);
-    if (normalizedKworb.includes(normalizedRegistry) ||
-        normalizedRegistry.includes(normalizedKworb)) {
-      return { rowIndex: i, row: registryData[i], matchType: 'partial' };
+    if (!normalizedRegistry) continue;
+    if (normalizedRegistry.length >= 5 && normalizedKworb.length >= 5 &&
+      (normalizedKworb.includes(normalizedRegistry) ||
+       normalizedRegistry.includes(normalizedKworb))) {
+    return { rowIndex: i, row: registryData[i], matchType: 'partial' };
     }
   }
 
