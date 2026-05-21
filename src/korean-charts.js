@@ -23,9 +23,13 @@ const GUYSOME_SLUG = {
 
 const PLATFORM_LABEL = { melon:'MelOn', genie:'Genie', flo:'Flo', vibe:'Vibe', bugs:'Bugs' };
 
-// Sentinel rows in tracker — used to gate "already ran today/this-week"
+// Sentinel rows in tracker — used to gate "already ran today/this-week/this-hour"
 const SENTINEL_DAILY  = '__SENTINEL__|daily|daily';
 const SENTINEL_WEEKLY = '__SENTINEL__|weekly|weekly';
+// Realtime sentinel key includes date+hour so it resets each hour
+function sentinelRealtimeKey(dateStr, hour) {
+  return `__SENTINEL__|realtime|${dateStr}${String(hour).padStart(2,'0')}`;
+}
 
 // ─── KST Helpers ─────────────────────────────────────────────────────────────
 
@@ -276,9 +280,13 @@ async function persistTracker(sheets, dirtyKeys, trackerMap) {
 
 // ─── Sentinel ────────────────────────────────────────────────────────────────
 
-function sentinelAlreadyRan(trackerMap, key, dateStr) {
+function sentinelAlreadyRan(trackerMap, key, dateStr, hour) {
   const rec = trackerMap.get(key);
-  return rec ? (rec.lastSeen || '').startsWith(dateStrToISO(dateStr)) : false;
+  if (!rec) return false;
+  const prefix = hour !== undefined
+    ? `${dateStrToISO(dateStr)} ${String(hour).padStart(2,'0')}`
+    : dateStrToISO(dateStr);
+  return (rec.lastSeen || '').startsWith(prefix);
 }
 
 function setSentinel(trackerMap, dirtyKeys, key) {
@@ -457,7 +465,7 @@ async function sendToDiscord(payload) {
 
 async function sendChartDraft(match, label, entries) {
   const { memberConfig, trackName, songHashtags } = match;
-  const header = `${memberConfig.handle}'s '${trackName}' — ${label}`;
+  const header = `${memberConfig.handle}'s '${trackName}' —  ${label}`;
 
   let chartLines = entries.map(e => {
     let line = `#${e.rank} ${PLATFORM_LABEL[e.platform]} ${e.movementStr}`;
@@ -534,25 +542,33 @@ async function main() {
 
   // ── REALTIME ──────────────────────────────────────────────────────────────
   if (runRealtime) {
-    console.log('Realtime...');
-    const results = new Map();
-    for (const p of ['melon','genie','flo','bugs']) {
-      const slug = GUYSOME_SLUG[p].realtime;
-      if (!slug) continue;
-      try {
-        await delay(DELAY_MS);
-        const data = await scrapeGuysome(slug, dateStr, kstHour);
-        if (data.length) results.set(p, data);
-        console.log(`  ${p}: ${data.length}`);
-      } catch (e) { console.error(`  ${p}:`, e.message); }
-    }
-    if (results.size) {
-      const tm = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys);
-      const lb = buildLabel('realtime');
-      for (const { match, entries } of tm.values()) {
-        entries.sort((a,b) => a.rank - b.rank);
-        await sendChartDraft(match, lb, entries);
-        await delay(DELAY_MS);
+    const realtimeKey = sentinelRealtimeKey(dateStr, kstHour);
+    if (sentinelAlreadyRan(trackerMap, realtimeKey, dateStr, kstHour)) {
+      console.log('Realtime already ran this hour. Skipping.');
+    } else {
+      console.log('Realtime...');
+      const results = new Map();
+      for (const p of ['melon','genie','flo','bugs']) {
+        const slug = GUYSOME_SLUG[p].realtime;
+        if (!slug) continue;
+        try {
+          await delay(DELAY_MS);
+          const data = await scrapeGuysome(slug, dateStr, kstHour);
+          if (data.length) results.set(p, data);
+          console.log(`  ${p}: ${data.length}`);
+        } catch (e) { console.error(`  ${p}:`, e.message); }
+      }
+      if (results.size) {
+        const tm = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys);
+        const lb = buildLabel('realtime');
+        for (const { match, entries } of tm.values()) {
+          entries.sort((a,b) => a.rank - b.rank);
+          await sendChartDraft(match, lb, entries);
+          await delay(DELAY_MS);
+        }
+        setSentinel(trackerMap, dirtyKeys, realtimeKey);
+      } else {
+        console.log('Realtime returned no data.');
       }
     }
   }
