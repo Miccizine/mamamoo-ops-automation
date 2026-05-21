@@ -49,6 +49,9 @@ function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
       (nc.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
 
+    // DEBUG — remove after confirming
+    console.log(`TITLE MATCH: chart="${nc}" chartArtist="${na}" → registry="${nr}" regArtist="${nrArtist}" | chartIsMamamoo=${isMamamooArtist(na)}`);
+
     // Registry row must be a Mamamoo artist
     if (!isMamamooArtist(nrArtist)) continue;
 
