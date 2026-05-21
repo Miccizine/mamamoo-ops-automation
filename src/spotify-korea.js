@@ -213,7 +213,10 @@ function buildKoreaChartPost(config, trackName, pos, movementStr, dayCount, peak
 
   lines.push('');
 
-  if (spotifyUrl)   lines.push(spotifyUrl);
+  if (spotifyUrl)   {
+    lines.push(spotifyUrl);
+    lines.push(''); // extra next line
+  }
   if (songHashtags) lines.push(songHashtags);
   if (config.tags)  lines.push(config.tags);
   lines.push(closingTags);
