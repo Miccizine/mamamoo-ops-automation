@@ -337,8 +337,7 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     if (!isMamamooArtist(nrArtist)) continue;
 
     // Exact match always valid; partial only if both titles >= 5 chars
-    const titleMatch = nr === nc ||
-      (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    const titleMatch = nr === nc || (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
 
     return {
@@ -375,7 +374,9 @@ function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
 function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, rank, movementStr, dateStr) {
   const key = `${trackName}|${platform}|${chartType}`;
   const ex  = trackerMap.get(key);
-  const isNewPeak = !ex || ex.peakPos === null || rank < ex.peakPos;
+  // Only flag NEW PEAK when we have a previous peak to compare against.
+  // On fresh sheet or first entry, skip — we can't verify historical peak.
+  const isNewPeak = ex !== undefined && ex.peakPos !== null && rank < ex.peakPos;
 
   // Re-entry: previously seen, then gap > 25h, now charting again
   let reentryDate = ex ? ex.reentryDate : '';
@@ -468,14 +469,15 @@ async function sendChartDraft(match, label, entries) {
   const hashLine    = songHashtags
     ? songHashtags.split('\n').map(h => h.trim()).filter(Boolean).join(' ')
     : '';
-  const closingTags = memberConfig.label
-    ? `#마마무 ${memberConfig.label}`
-    : '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
+  const closingTags = memberConfig.handle === '#MAMAMOO'
+    ? '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO'
+    : `#마마무 ${memberConfig.label}`;
 
   const buildBody = (lines) => {
     const parts = [header, '', ...lines];
-    if (hashLine) parts.push('', hashLine);
-    parts.push('', closingTags);
+    if (hashLine)          parts.push('', hashLine);
+    if (memberConfig.tags) parts.push(memberConfig.tags);
+    parts.push(closingTags);
     return parts.join('\n');
   };
 
