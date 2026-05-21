@@ -125,7 +125,6 @@ async function scrapeGuysome(slug, dateStr, hour) {
     }
 
     return { rank, title, artist, htmlMovement, isNew, isReNew: false };
-    console.log(`Chart artist: "${entry.artist}" | title: "${entry.title}"`);
   }).filter(e => e.rank !== null && e.title);
 }
 
@@ -325,22 +324,21 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
   const na = norm(chartArtist);
 
   // Chart artist must be Mamamoo-related — fast exit if not
-  if (!na || !isMamamooArtist(na)) return null;
+  if (!isMamamooArtist(na)) return null;
 
   for (const row of registryData) {
     if (!row[0]) continue;
     if ((row[11] || '').toLowerCase() === 'no') continue; // Effective Tracking = No
 
     const nr       = norm(row[0]);
-    // Skip if normalized registry title is empty (e.g. pure CJK stripped)
-    if (!nr) continue;
     const nrArtist = norm(row[1] || '');
 
     // Registry row must be a Mamamoo artist
     if (!isMamamooArtist(nrArtist)) continue;
 
-    // Exact match always valid; partial only if title >= 5 chars
-    const titleMatch = nr === nc || (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
+    // Exact match always valid; partial only if both titles >= 5 chars
+    const titleMatch = nr === nc ||
+      (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
 
     return {
@@ -412,7 +410,6 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
   for (const [platform, entries] of chartResults) {
     for (const entry of entries) {
       const match = findInRegistry(entry.title, entry.artist, registryData);
-      if (match) console.log(`MATCH: chart="${entry.title}" artist="${entry.artist}" → registry="${match.trackName}"`);
       if (!match) continue;
 
       // First pass: upsert with empty movement to get prevPos
@@ -472,7 +469,7 @@ async function sendChartDraft(match, label, entries) {
     ? songHashtags.split('\n').map(h => h.trim()).filter(Boolean).join(' ')
     : '';
   const closingTags = memberConfig.label
-    ? `#마마무 #MAMAMOO\n${memberConfig.label}`
+    ? `#마마무 #mamamoo\n${memberConfig.label}`
     : '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
 
   const buildBody = (lines) => {
