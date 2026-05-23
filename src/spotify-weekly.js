@@ -73,15 +73,9 @@ async function scrapeTotalStreams(kworbUrl) {
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${kworbUrl}`);
   const html = await res.text();
 
-  // Sum all track stream counts from the songs table
-  let total = 0;
-  const pattern = /<td[^>]*>([0-9,]{4,})<\/td>/g;
-  let m;
-  while ((m = pattern.exec(html)) !== null) {
-    const n = parseInt(m[1].replace(/,/g, ''), 10);
-    if (!isNaN(n)) total += n;
-  }
-  return total;
+  const m = html.match(/Streams<\/td>\s*<td[^>]*>([\d,]+)/);
+  if (!m) throw new Error(`Could not parse total streams from ${kworbUrl}`);
+  return parseInt(m[1].replace(/,/g, ''), 10);
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
