@@ -63,6 +63,7 @@ async function getSpotifyFollowers(token, artistId) {
   });
   if (!res.ok) throw new Error(`Spotify API error: ${res.status} for ${artistId}`);
   const data = await res.json();
+  console.log(`Spotify response for ${artistId}:`, JSON.stringify(data).slice(0, 300));
   return data.followers.total;
 }
 
