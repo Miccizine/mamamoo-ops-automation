@@ -20,7 +20,7 @@ jobs:
       - name: Run Spotify weekly updater
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          SPREADSHEET_ID:              ${{ secrets.SPREADSHEET_ID }}
+          SPREADSHEET_ID:              ${{ secrets.GOOGLE_SHEETS_ID }}
           DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
           SPOTIFY_CLIENT_ID:           ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET:       ${{ secrets.SPOTIFY_CLIENT_SECRET }}
