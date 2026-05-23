@@ -376,6 +376,17 @@ async function flagNewRelease(sheets, trackName, artist, source, sourceUrl) {
   console.log(`🆕 Flagged new release: ${trackName}`);
 }
 
+// ── Update Sheet Row ──────────────────────────────────────────────────────────
+
+async function updateSheetRow(sheets, sheetName, rowIndex, values) {
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+    range: `${sheetName}!A${rowIndex}:Z${rowIndex}`,
+    valueInputOption: 'RAW',
+    resource: { values: [values] }
+  });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -384,6 +395,7 @@ module.exports = {
   getSheetData,
   appendSheetRow,
   batchAppendRows,
+  updateSheetRow,
   getMemberConfig,
   buildClosingTags,
   formatMilestoneNumber,
