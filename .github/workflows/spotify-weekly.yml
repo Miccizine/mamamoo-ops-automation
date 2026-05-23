@@ -1,0 +1,27 @@
+name: Spotify Weekly Update
+
+on:
+  schedule:
+    - cron: '0 12 * * 6'
+  workflow_dispatch:
+
+jobs:
+  spotify-weekly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Run Spotify weekly updater
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID:              ${{ secrets.SPREADSHEET_ID }}
+          DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+          SPOTIFY_CLIENT_ID:           ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET:       ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+        run: node src/spotify-weekly.js
