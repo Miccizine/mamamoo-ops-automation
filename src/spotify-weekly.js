@@ -136,7 +136,7 @@ async function main() {
   await new Promise(r => setTimeout(r, JITTER_MS));
 
   const sheets        = await getSheetsClient();
-  const spreadsheetId = process.env.SPREADSHEET_ID;
+  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
 
   await ensureSheet(sheets, spreadsheetId);
 
