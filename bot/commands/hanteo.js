@@ -96,6 +96,15 @@ module.exports = {
         total,
         timestamp,
       ]);
+
+      // Log cumulative to Physical Sales Log
+      await appendSheetRow(sheets, 'Physical Sales Log', [
+        new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
+        album,
+        'Hanteo',
+        total,
+        '', // Cumulative — manual or future calculation
+      ]);
     }
 
     await interaction.reply({ content: '✅ Posted and logged.', ephemeral: true });
