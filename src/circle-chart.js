@@ -304,35 +304,42 @@ async function main() {
     const reentry  = existing ? isReentry(existing.data[COL.LAST_SEEN]) : false;
 
     if (existing) {
-      const prevPos  = parseInt(existing.data[COL.CURRENT_POS], 10) || hit.rank;
-      const prevPeak = parseInt(existing.data[COL.PEAK_POS], 10)    || hit.rank;
-      const newPeak  = Math.min(hit.rank, prevPeak);
-      const peakDate = newPeak < prevPeak ? today : (existing.data[COL.PEAK_DATE] || today);
-
-      hit.peakPos = newPeak;
-
-      // Only post if this week hasn't been logged yet
-      const alreadyThisWeek = existing.data[COL.WEEK] === week;
-
-      const updatedRow = [...existing.data];
-      updatedRow[COL.CURRENT_POS]  = hit.rank;
-      updatedRow[COL.MOVEMENT]     = hit.movement;
-      updatedRow[COL.PEAK_POS]     = newPeak;
-      updatedRow[COL.PEAK_DATE]    = peakDate;
-      updatedRow[COL.LAST_SEEN]    = today;
-      updatedRow[COL.WEEK]         = week;
-      if (reentry) updatedRow[COL.REENTRY_DATE] = today;
-
-      await updateSheetRow(sheets, SHEET, existing.sheetRowIndex, updatedRow);
-
-      if (!alreadyThisWeek || reentry) {
-        await postChartEntry(hit, reentry);
-        await new Promise(r => setTimeout(r, 2000));
-      } else {
-        console.log(`Already posted this week: ${hit.chartName} — ${hit.title}`);
-      }
-
+    const prevPeak = parseInt(existing.data[COL.PEAK_POS], 10) || hit.rank;
+    const newPeak  = Math.min(hit.rank, prevPeak);
+    const peakDate = newPeak < prevPeak ? today : (existing.data[COL.PEAK_DATE] || today);
+    const alreadyThisWeek = existing.data[COL.WEEK] === week;
+  
+    hit.peakPos = newPeak;
+  
+    const nothingChanged =
+      alreadyThisWeek &&
+      !reentry &&
+      parseInt(existing.data[COL.CURRENT_POS], 10) === hit.rank &&
+      prevPeak === newPeak;
+  
+    if (nothingChanged) {
+      console.log(`No change: ${hit.chartName} — ${hit.title}`);
+      continue;
+    }
+  
+    const updatedRow = [...existing.data];
+    updatedRow[COL.CURRENT_POS] = hit.rank;
+    updatedRow[COL.MOVEMENT]    = hit.movement;
+    updatedRow[COL.PEAK_POS]    = newPeak;
+    updatedRow[COL.PEAK_DATE]   = peakDate;
+    updatedRow[COL.LAST_SEEN]   = today;
+    updatedRow[COL.WEEK]        = week;
+    if (reentry) updatedRow[COL.REENTRY_DATE] = today;
+  
+    await updateSheetRow(sheets, SHEET, existing.sheetRowIndex, updatedRow);
+  
+    if (!alreadyThisWeek || reentry) {
+      await postChartEntry(hit, reentry);
+      await new Promise(r => setTimeout(r, 2000));
     } else {
+      console.log(`Already posted this week: ${hit.chartName} — ${hit.title}`);
+      
+  } else {
       // New entry
       hit.peakPos = hit.rank;
       const newRow = new Array(11).fill('');
