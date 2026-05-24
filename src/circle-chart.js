@@ -332,6 +332,16 @@ async function main() {
     if (reentry) updatedRow[COL.REENTRY_DATE] = today;
   
     await updateSheetRow(sheets, SHEET, existing.sheetRowIndex, updatedRow);
+
+    if (hit.chartName === 'Album Chart' && !nothingChanged) {
+      await appendSheetRow(sheets, 'Physical Sales Log', [
+        new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
+        hit.title,
+        'Circle Chart',
+        hit.score || '',
+        '',
+      ]);
+    }
   
     if (!alreadyThisWeek || reentry) {
       await postChartEntry(hit, reentry);
@@ -357,6 +367,17 @@ async function main() {
 
       await appendSheetRow(sheets, SHEET, newRow);
       await postChartEntry(hit, false);
+
+      if (hit.chartName === 'Album Chart') {
+        await appendSheetRow(sheets, 'Physical Sales Log', [
+          new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
+          hit.title,
+          'Circle Chart',
+          hit.score || '',
+          '',
+        ]);
+      }
+      
       await new Promise(r => setTimeout(r, 2000));
 
       // Refresh sheet rows after append so subsequent lookups are accurate
