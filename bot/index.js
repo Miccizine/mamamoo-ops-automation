@@ -5,6 +5,7 @@ const { google } = require('googleapis');
 const startKeepAlive = require('./keep-alive');
 const hanteoCommand  = require('./commands/hanteo');
 const { getComebackMode, getSheetData } = require('../src/helpers');
+const { CronJob } = require('cron');
 
 startKeepAlive();
 
