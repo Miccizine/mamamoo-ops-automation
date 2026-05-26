@@ -55,7 +55,7 @@ async function main() {
       }
     });
 
-  client.once('ready', () => console.log(`Bot ready: ${client.user.tag}`));
+  client.once('clientReady', () => console.log(`Bot ready: ${client.user.tag}`));
   new CronJob('0 10-23 * * *', async () => {
     try {
       const sheetsClient = await getSheetsClient();
