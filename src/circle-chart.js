@@ -348,7 +348,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 2000));
     } else {
       console.log(`Already posted this week: ${hit.chartName} — ${hit.title}`);
-      
+    }
   } else {
       // New entry
       hit.peakPos = hit.rank;
