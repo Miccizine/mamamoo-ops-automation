@@ -44,11 +44,16 @@ async function main() {
     if (!command) return;
     try {
       await command.execute(interaction, sheets);
-    } catch (err) {
-      console.error(err);
-      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
-    }
-  });
+      } catch (err) {
+        console.error(err);
+        const msg = { content: '❌ An error occurred.' };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(msg);
+        } else {
+          await interaction.reply({ ...msg, ephemeral: true });
+        }
+      }
+    });
 
   client.once('ready', () => console.log(`Bot ready: ${client.user.tag}`));
   new CronJob('0 10-23 * * *', async () => {
