@@ -5,7 +5,6 @@ module.exports = {
   data: new SlashCommandBuilder()
   .setName('hanteo')
   .setDescription('Log Hanteo daily sales')
-  .addIntegerOption(o => o.setName('day').setDescription('Sales day number (e.g. 1, 2, 3)').setRequired(true))
   .addStringOption(o => o.setName('timestamp').setDescription('Chart timestamp e.g. 250826 — 1820 KST').setRequired(true))
   .addStringOption(o => o.setName('numbers').setDescription('Rank,copies per version in order e.g. 3,10000,5,8000,-,500').setRequired(true)),
 
@@ -23,6 +22,11 @@ module.exports = {
       await interaction.editReply({ content: '❌ Comeback mode is not active.' });
       return;
     }
+
+    if (!cfg['COMEBACK_RELEASE_DATE']) {
+      await interaction.editReply({ content: '❌ COMEBACK_RELEASE_DATE not set in Config.' });
+      return;
+    }
     
     const artist    = cfg['COMEBACK_ARTIST'];
     const album     = cfg['COMEBACK_ALBUM'];
@@ -33,7 +37,15 @@ module.exports = {
       return;
     }
     
-    const day       = interaction.options.getInteger('day');
+    const releaseDate = cfg['COMEBACK_RELEASE_DATE'].toString().replace(/-/g, '');
+    const release     = new Date(`${releaseDate.slice(0,4)}-${releaseDate.slice(4,6)}-${releaseDate.slice(6,8)}`);
+    const now         = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const day         = Math.floor((now - release) / 86400000) + 1;
+    
+    if (day < 1 || day > 7) {
+      await interaction.editReply({ content: `❌ Today is not within the D1-D7 sales window.` });
+      return;
+    }
     const timestamp = interaction.options.getString('timestamp');
     const numbersRaw = interaction.options.getString('numbers');
     
