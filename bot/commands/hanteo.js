@@ -37,15 +37,31 @@ module.exports = {
       return;
     }
     
-    const releaseDate = cfg['COMEBACK_RELEASE_DATE'].toString().replace(/-/g, '');
-    const release     = new Date(`${releaseDate.slice(0,4)}-${releaseDate.slice(4,6)}-${releaseDate.slice(6,8)}`);
+    const rawDate = cfg['COMEBACK_RELEASE_DATE'].toString().trim();
+    let release;
+    
+    if (rawDate.includes('/')) {
+      // Handle M/D/YYYY or MM/DD/YYYY from Google Sheets auto-format
+      const [m, d, y] = rawDate.split('/');
+      release = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+    } else {
+      const cleaned = rawDate.replace(/-/g, '');
+      release = new Date(`${cleaned.slice(0,4)}-${cleaned.slice(4,6)}-${cleaned.slice(6,8)}`);
+    }
+    
     const now         = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
     const day         = Math.floor((now - release) / 86400000) + 1;
+
+    if (isNaN(day)) {
+      await interaction.editReply({ content: '❌ Could not calculate day — check COMEBACK_RELEASE_DATE format in Config (expected YYYYMMDD or YYYY-MM-DD).' });
+      return;
+    }
     
     if (day < 1 || day > 7) {
       await interaction.editReply({ content: `❌ Today is not within the D1-D7 sales window.` });
       return;
     }
+    
     const timeInput   = interaction.options.getString('timestamp');
     const kstDate     = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '').slice(2); // YYMMDD
     const timestamp   = `${kstDate} — ${timeInput}`;
