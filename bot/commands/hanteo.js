@@ -3,49 +3,60 @@ const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('hanteo')
-    .setDescription('Log Hanteo daily sales')
-    .addStringOption(o => o.setName('artist').setDescription('Artist name').setRequired(true)
-      .addChoices(
-        { name: 'MAMAMOO',  value: 'MAMAMOO'  },
-        { name: 'Solar',    value: 'Solar'     },
-        { name: 'Moonbyul', value: 'Moonbyul'  },
-        { name: 'Wheein',   value: 'Wheein'    },
-        { name: 'Hwasa',    value: 'Hwasa'     },
-      ))
-    .addStringOption(o => o.setName('album').setDescription('Album name').setRequired(true))
-    .addIntegerOption(o => o.setName('day').setDescription('Sales day number (e.g. 1, 2, 3)').setRequired(true))
-    .addStringOption(o => o.setName('timestamp').setDescription('Chart timestamp e.g. 250826 — 1820 KST').setRequired(true))
-    .addStringOption(o => o.setName('versions').setDescription('One version per line: VersionName | #rank | copies').setRequired(true)),
+  .setName('hanteo')
+  .setDescription('Log Hanteo daily sales')
+  .addIntegerOption(o => o.setName('day').setDescription('Sales day number (e.g. 1, 2, 3)').setRequired(true))
+  .addStringOption(o => o.setName('timestamp').setDescription('Chart timestamp e.g. 250826 — 1820 KST').setRequired(true))
+  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies per version in order e.g. 3,10000,5,8000,-,500').setRequired(true)),
 
   async execute(interaction, sheets) {
-    const artist    = interaction.options.getString('artist');
-    const album     = interaction.options.getString('album');
+    await interaction.deferReply({ ephemeral: true });
+
+    const { getSheetData } = require('../../src/helpers');
+    
+    // Read Config
+    const configData = await getSheetData(sheets, 'Config');
+    const cfg = {};
+    for (const row of configData) cfg[row[0]] = row[1] || '';
+    
+    if (cfg['COMEBACK_MODE'] !== 'ON') {
+      await interaction.editReply({ content: '❌ Comeback mode is not active.' });
+      return;
+    }
+    
+    const artist    = cfg['COMEBACK_ARTIST'];
+    const album     = cfg['COMEBACK_ALBUM'];
+    const versNames = cfg['COMEBACK_VERSIONS'].split(',').map(v => v.trim()).filter(Boolean);
+    
+    if (!artist || !album || versNames.length === 0) {
+      await interaction.editReply({ content: '❌ COMEBACK_ARTIST, COMEBACK_ALBUM, or COMEBACK_VERSIONS not set in Config.' });
+      return;
+    }
+    
     const day       = interaction.options.getInteger('day');
     const timestamp = interaction.options.getString('timestamp');
-    const versionsRaw = interaction.options.getString('versions');
-
-    // Parse versions — each line: "VersionName | #rank | copies"
-    const lines = versionsRaw.split('\n').map(l => l.trim()).filter(Boolean);
+    const numbersRaw = interaction.options.getString('numbers');
+    
+    const parts = numbersRaw.split(',').map(p => p.trim());
+    if (parts.length !== versNames.length * 2) {
+      await interaction.editReply({ content: `❌ Expected ${versNames.length * 2} values (rank,copies per version), got ${parts.length}.` });
+      return;
+    }
+    
     const versions = [];
     let total = 0;
     let parseError = false;
-
-    for (const line of lines) {
-      const parts = line.split('|').map(p => p.trim());
-      if (parts.length < 3) { parseError = true; break; }
-      const [name, rank, copiesStr] = parts;
-      const copies = parseInt(copiesStr.replace(/,/g, ''), 10);
+    
+    for (let i = 0; i < versNames.length; i++) {
+      const rank    = parts[i * 2];
+      const copies  = parseInt(parts[i * 2 + 1].replace(/,/g, ''), 10);
       if (isNaN(copies)) { parseError = true; break; }
       total += copies;
-      versions.push({ name, rank, copies });
+      versions.push({ name: versNames[i], rank: rank === '-' ? '#-' : `#${rank}`, copies });
     }
-
+    
     if (parseError || versions.length === 0) {
-      await interaction.reply({
-        content: '❌ Could not parse versions. Format each line as: `Version Name | #rank | copies`',
-        ephemeral: true,
-      });
+      await interaction.editReply({ content: '❌ Could not parse numbers. Format: rank,copies,rank,copies,...' });
       return;
     }
 
@@ -96,17 +107,17 @@ module.exports = {
         total,
         timestamp,
       ]);
-
-      // Log cumulative to Physical Sales Log
-      await appendSheetRow(sheets, 'Physical Sales Log', [
-        new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
-        album,
-        'Hanteo',
-        total,
-        '', // Cumulative — manual or future calculation
-      ]);
     }
 
-    await interaction.reply({ content: '✅ Posted and logged.', ephemeral: true });
+    // Log cumulative to Physical Sales Log
+    await appendSheetRow(sheets, 'Physical Sales Log', [
+      new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
+      album,
+      'Hanteo',
+      total,
+      '', // Cumulative — manual or future calculation
+    ]);
+
+    await interaction.editReply({ content: '✅ Posted and logged.' });
   },
 };
