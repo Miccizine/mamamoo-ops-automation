@@ -5,7 +5,7 @@ module.exports = {
   data: new SlashCommandBuilder()
   .setName('hanteo')
   .setDescription('Log Hanteo daily sales')
-  .addStringOption(o => o.setName('timestamp').setDescription('Chart timestamp e.g. 250826 — 1820 KST').setRequired(true))
+  .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1820 KST').setRequired(true))
   .addStringOption(o => o.setName('numbers').setDescription('Rank,copies per version in order e.g. 3,10000,5,8000,-,500').setRequired(true)),
 
   async execute(interaction, sheets) {
@@ -46,7 +46,9 @@ module.exports = {
       await interaction.editReply({ content: `❌ Today is not within the D1-D7 sales window.` });
       return;
     }
-    const timestamp = interaction.options.getString('timestamp');
+    const timeInput   = interaction.options.getString('timestamp');
+    const kstDate     = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '').slice(2); // YYMMDD
+    const timestamp   = `${kstDate} — ${timeInput}`;
     const numbersRaw = interaction.options.getString('numbers');
     
     const parts = numbersRaw.split(',').map(p => p.trim());
