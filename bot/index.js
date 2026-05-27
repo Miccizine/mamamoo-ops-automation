@@ -67,6 +67,7 @@ async function main() {
       const configData     = await getSheetData(sheetsClient, 'Config');
       const releaseDateRow = configData.find(r => r[0] === 'COMEBACK_RELEASE_DATE');
       if (!releaseDateRow) return;
+      if (!releaseDateRow[1] || releaseDateRow[1].toString().trim() === '') return;
   
       const rawDate = releaseDateRow[1].toString().trim();
       let release;
@@ -85,7 +86,6 @@ async function main() {
       if (dayNum < 1 || dayNum > 7) return;
   
       const channel = await client.channels.fetch(process.env.DISCORD_HANTEO_CHANNEL_ID);
-      await channel.send(`⏰ **Hanteo check reminder — D${dayNum}** — open Whosfan and log with \`/hanteo-hourly\``);
       const reminder = await channel.send(`⏰ **Hanteo check reminder — D${dayNum}** — open Whosfan and log with \`/hanteo-hourly\``);
       setTimeout(() => reminder.delete().catch(() => {}), 55 * 60 * 1000);
     } catch (e) {
