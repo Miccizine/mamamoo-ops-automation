@@ -85,7 +85,9 @@ async function main() {
       if (dayNum < 1 || dayNum > 7) return;
   
       const channel = await client.channels.fetch(process.env.DISCORD_HANTEO_CHANNEL_ID);
-      await channel.send(`⏰ **Hanteo check reminder — D${dayNum}** — open Whosfan and log with \`/hanteo\``);
+      await channel.send(`⏰ **Hanteo check reminder — D${dayNum}** — open Whosfan and log with \`/hanteo-hourly\``);
+      const reminder = await channel.send(`⏰ **Hanteo check reminder — D${dayNum}** — open Whosfan and log with \`/hanteo-hourly\``);
+      setTimeout(() => reminder.delete().catch(() => {}), 55 * 60 * 1000);
     } catch (e) {
       console.error('Reminder error:', e.message);
     }
