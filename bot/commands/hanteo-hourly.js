@@ -7,7 +7,8 @@ module.exports = {
   .setDescription('Log Hanteo real-time chart snapshot')
   .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1920 KST').setRequired(true))
   .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true)),
-
+  .addStringOption(o => o.setName('song_tags').setDescription('Song/trending hashtags e.g. #Laundri_Is_Out_Now').setRequired(false)),
+  
   async execute(interaction, sheets) {
     await interaction.deferReply({ ephemeral: true });
 
@@ -66,6 +67,7 @@ module.exports = {
     const kstDate     = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '').slice(2); // YYMMDD
     const timestamp   = `${kstDate} — ${timeInput}`;
     const numbersRaw = interaction.options.getString('numbers');
+    const songTags = interaction.options.getString('song_tags') || '';
     
     const parts = numbersRaw.split(',').map(p => p.trim());
     if (parts.length !== versNames.length * 3) {
@@ -113,16 +115,17 @@ module.exports = {
     }, 0);
     const totalDeltaStr = totalDelta > 0 ? ` (+${totalDelta.toLocaleString('en-US')})` : totalDelta < 0 ? ` (${totalDelta.toLocaleString('en-US')})` : '';
     
-    const post = [
+    const postLines = [
       `Hanteo Chart (${timestamp})`,
       ``,
       versionLines,
       ``,
       `Total — ${total.toLocaleString('en-US')} copies${totalDeltaStr}`,
       ``,
-      tag.tags,
-      tag.label,
-    ].join('\n');
+    ];
+    if (songTags) postLines.push(songTags, ``);
+    postLines.push(tag.tags, tag.label);
+    const post = postLines.join('\n');
 
     // Send to Hanteo channel
     const channel = await interaction.client.channels.fetch(process.env.DISCORD_HANTEO_CHANNEL_ID);
