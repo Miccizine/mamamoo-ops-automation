@@ -155,6 +155,76 @@ module.exports = {
       '', // Cumulative — manual or future calculation
     ]);
 
+    // ── Milestone detection ───────────────────────────────────────────────────
+    const salesLog   = await getSheetData(sheets, 'Physical Sales Log');
+    const albumRows  = salesLog.filter(r => r[1] === album && r[2] === 'Hanteo');
+    const cumulative = albumRows.reduce((sum, r) => sum + (parseInt(r[3], 10) || 0), 0);
+
+    const milestone10k = Math.floor(cumulative / 10000) * 10000;
+    const milestone50k = Math.floor(cumulative / 50000) * 50000;
+
+    const milestonesAchieved = await getSheetData(sheets, 'Milestones Achieved');
+    const alreadyPosted = (threshold) => milestonesAchieved.some(r =>
+      r[1] === album && r[3] === 'Hanteo' && parseInt(r[4], 10) === threshold
+    );
+
+    const webhookUrl = process.env.DISCORD_MILESTONE_WEBHOOK;
+
+    async function postMilestone(threshold, isFullBreakdown) {
+      if (threshold === 0 || alreadyPosted(threshold)) return;
+
+      const formattedThreshold = threshold >= 1000000
+        ? `${threshold / 1000000}M`
+        : `${threshold / 1000}K`;
+
+      let description;
+      if (isFullBreakdown) {
+        description = [
+          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
+          ``,
+          `[Add per-album breakdown here]`,
+          ``,
+          tag.tags,
+          tag.label,
+        ].join('\n');
+      } else {
+        description = [
+          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
+          ``,
+          tag.tags,
+          tag.label,
+        ].join('\n');
+      }
+
+      await fetch(webhookUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          embeds: [{
+            title: `🏆 HANTEO MILESTONE — ${formattedThreshold}`,
+            color: 16766720,
+            description,
+            footer: { text: `Cumulative: ${cumulative.toLocaleString('en-US')} copies | ✅ Approve and post | ❌ Discard` },
+          }],
+        }),
+      });
+
+      await appendSheetRow(sheets, 'Milestones Achieved', [
+        getPHTTimestamp(),
+        album,
+        artist,
+        'Hanteo',
+        threshold,
+        'Physical Sales',
+        '',
+        '',
+        '',
+      ]);
+    }
+
+    if (milestone10k > 0) await postMilestone(milestone10k, false);
+    if (milestone50k > 0 && milestone50k !== milestone10k) await postMilestone(milestone50k, true);
+
     await interaction.editReply({ content: '✅ Posted and logged.' });
   },
 };
