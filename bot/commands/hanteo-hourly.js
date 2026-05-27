@@ -3,10 +3,10 @@ const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-  .setName('hanteo')
-  .setDescription('Log Hanteo daily sales')
-  .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1820 KST').setRequired(true))
-  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies per version in order e.g. 3,10000,5,8000,-,500').setRequired(true)),
+  .setName('hanteo-hourly')
+  .setDescription('Log Hanteo real-time chart snapshot')
+  .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1920 KST').setRequired(true))
+  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true)),
 
   async execute(interaction, sheets) {
     await interaction.deferReply({ ephemeral: true });
@@ -68,8 +68,8 @@ module.exports = {
     const numbersRaw = interaction.options.getString('numbers');
     
     const parts = numbersRaw.split(',').map(p => p.trim());
-    if (parts.length !== versNames.length * 2) {
-      await interaction.editReply({ content: `❌ Expected ${versNames.length * 2} values (rank,copies per version), got ${parts.length}.` });
+    if (parts.length !== versNames.length * 3) {
+  await interaction.editReply({ content: `❌ Expected ${versNames.length * 3} values (rank,copies,delta per version), got ${parts.length}.` });
       return;
     }
     
@@ -78,11 +78,12 @@ module.exports = {
     let parseError = false;
     
     for (let i = 0; i < versNames.length; i++) {
-      const rank    = parts[i * 2];
-      const copies  = parseInt(parts[i * 2 + 1].replace(/,/g, ''), 10);
+      const rank   = parts[i * 3];
+      const copies = parseInt(parts[i * 3 + 1].replace(/,/g, ''), 10);
+      const delta  = parts[i * 3 + 2];
       if (isNaN(copies)) { parseError = true; break; }
       total += copies;
-      versions.push({ name: versNames[i], rank: rank === '-' ? '#-' : `#${rank}`, copies });
+      versions.push({ name: versNames[i], rank: rank === '-' ? '#-' : `#${rank}`, copies, delta });
     }
     
     if (parseError || versions.length === 0) {
@@ -100,18 +101,24 @@ module.exports = {
     };
     const tag = memberTags[artist];
 
-    const versionLines = versions.map(v =>
-      `${v.name} — ${v.rank} | ${v.copies.toLocaleString('en-US')} copies`
-    ).join('\n');
-
+    const versionLines = versions.map(v => {
+      const deltaStr = v.delta && v.delta !== '0' ? ` (${v.delta})` : '';
+      return `${v.rank} ${v.name} — ${v.copies.toLocaleString('en-US')} copies${deltaStr}`;
+    }).join('\n');
+    
+    // Calculate total delta
+    const totalDelta = versions.reduce((sum, v) => {
+      const n = parseInt((v.delta || '0').replace('+', ''), 10);
+      return sum + (isNaN(n) ? 0 : n);
+    }, 0);
+    const totalDeltaStr = totalDelta > 0 ? ` (+${totalDelta.toLocaleString('en-US')})` : totalDelta < 0 ? ` (${totalDelta.toLocaleString('en-US')})` : '';
+    
     const post = [
-      `Hanteo Daily — ${artist} '${album}'`,
-      ``,
-      `D${day} (${timestamp})`,
+      `Hanteo Chart (${timestamp})`,
       ``,
       versionLines,
       ``,
-      `Total: ${total.toLocaleString('en-US')} copies`,
+      `Total — ${total.toLocaleString('en-US')} copies${totalDeltaStr}`,
       ``,
       tag.tags,
       tag.label,
