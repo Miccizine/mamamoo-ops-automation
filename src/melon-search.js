@@ -21,32 +21,28 @@ const COL = {
 // ── Fetch trending list ───────────────────────────────────────────────────────
 
 async function fetchTrending() {
+  // Step 1 — get session cookie from main page
+  const mainRes = await fetch(`${BASE_URL}/search/total/index.htm`, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
+    },
+  });
+  const cookie = mainRes.headers.get('set-cookie') || '';
+
+  // Step 2 — fetch trending with cookie
   const res = await fetch(`${BASE_URL}/search/side/keywordChart.htm`, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer':    `${BASE_URL}/search/total/index.htm`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
+      'Referer': `${BASE_URL}/search/total/index.htm`,
+      'Cookie': cookie,
     },
   });
   if (!res.ok) throw new Error(`Melon fetch error: ${res.status}`);
   return res.text();
-}
-
-function parseTrending(html) {
-  // Extract rank entries — each has a rank number and keyword text
-  const results = [];
-  const rankPattern = /<\w[^>]*>\s*(\d+)\s*<\/\w[^>]*>[\s\S]*?<a[^>]*>\s*([^<]+?)\s*<\/a>/g;
-
-  // Simpler: find all list items with rank + term
-  const itemPattern = /class="[^"]*rank[^"]*"[^>]*>\s*(\d+)[\s\S]*?class="[^"]*keyword[^"]*"[^>]*>\s*([^<\n]+?)\s*</g;
-  let m;
-  while ((m = itemPattern.exec(html)) !== null) {
-    const pos  = parseInt(m[1], 10);
-    const term = m[2].trim();
-    if (pos >= 1 && pos <= 10 && term) {
-      results.push({ pos, term });
-    }
-  }
-  return results;
 }
 
 // ── Match against search terms ────────────────────────────────────────────────
