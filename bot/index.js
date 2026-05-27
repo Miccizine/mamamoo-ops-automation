@@ -68,8 +68,16 @@ async function main() {
       const releaseDateRow = configData.find(r => r[0] === 'COMEBACK_RELEASE_DATE');
       if (!releaseDateRow) return;
   
-      const releaseDate = releaseDateRow[1].toString().replace(/-/g, '');
-      const release     = new Date(`${releaseDate.slice(0,4)}-${releaseDate.slice(4,6)}-${releaseDate.slice(6,8)}`);
+      const rawDate = releaseDateRow[1].toString().trim();
+      let release;
+      if (rawDate.includes('/')) {
+        const [m, d, y] = rawDate.split('/');
+        release = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+      } else {
+        const cleaned = rawDate.replace(/-/g, '');
+        release = new Date(`${cleaned.slice(0,4)}-${cleaned.slice(4,6)}-${cleaned.slice(6,8)}`);
+      }
+      
       const now         = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
       const diffDays    = Math.floor((now - release) / 86400000);
       const dayNum      = diffDays + 1;
