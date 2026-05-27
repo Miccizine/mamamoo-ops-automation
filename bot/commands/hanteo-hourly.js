@@ -129,7 +129,7 @@ module.exports = {
     await channel.send(post);
 
     // Log to sheet
-    const { getPHTTimestamp, appendSheetRow } = require('../../src/helpers');
+    const { getPHTTimestamp, appendSheetRow, getSheetData: getSD, updateSheetRow } = require('../../src/helpers');
     const today = getPHTTimestamp().split(' ')[0].replace(/-/g, '');
 
     for (const v of versions) {
@@ -155,6 +155,23 @@ module.exports = {
       '', // Cumulative — manual or future calculation
     ]);
 
+    // ── Update Hanteo Album Totals ────────────────────────────────────────────────
+    const albumTotals = await getSheetData(sheets, 'Hanteo Album Totals');
+    const albumRowIdx = albumTotals.findIndex((r, i) => i > 0 &&
+      r[0].toLowerCase() === artist.toLowerCase() &&
+      r[1].toLowerCase() === album.toLowerCase()
+    );
+    
+    if (albumRowIdx > -1) {
+      const existingRow = albumTotals[albumRowIdx];
+      const updatedRow  = [...existingRow];
+      updatedRow[2] = total; // Total Copies — current snapshot
+      updatedRow[3] = 'yes'; // Still Counting
+      await updateSheetRow(sheets, 'Hanteo Album Totals', albumRowIdx + 1, updatedRow);
+    } else {
+      await appendSheetRow(sheets, 'Hanteo Album Totals', [artist, album, total, 'yes']);
+    }
+
     // ── Milestone detection ───────────────────────────────────────────────────
     const salesLog   = await getSheetData(sheets, 'Physical Sales Log');
     const albumRows  = salesLog.filter(r => r[1] === album && r[2] === 'Hanteo');
@@ -179,15 +196,27 @@ module.exports = {
 
       let description;
       if (isFullBreakdown) {
-        description = [
-          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
-          ``,
-          `[Add per-album breakdown here]`,
-          ``,
-          tag.tags,
-          tag.label,
-        ].join('\n');
-      } else {
+      const totalsData  = await getSheetData(sheets, 'Hanteo Album Totals');
+      const artistRows  = totalsData.filter((r, i) => i > 0 &&
+        r[0].toLowerCase() === artist.toLowerCase()
+      );
+      const breakdownLines = artistRows.map(r => {
+        const stillCounting = r[3] && r[3].toLowerCase() === 'yes';
+        const copies = parseInt(r[2], 10).toLocaleString('en-US');
+        return `${r[1]} : ${copies} copies${stillCounting ? '*' : ''}`;
+      }).join('\n');
+      const hasStillCounting = artistRows.some(r => r[3] && r[3].toLowerCase() === 'yes');
+    
+      description = [
+        `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
+        ``,
+        breakdownLines,
+        hasStillCounting ? `\n*Still counting` : '',
+        ``,
+        tag.tags,
+        tag.label,
+      ].filter(l => l !== null).join('\n');
+    } else {
         description = [
           `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
           ``,
