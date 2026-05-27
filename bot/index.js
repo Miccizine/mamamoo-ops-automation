@@ -3,7 +3,7 @@
 const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
 const { google } = require('googleapis');
 const startKeepAlive = require('./keep-alive');
-const hanteoCommand  = require('./commands/hanteo');
+const hanteoHourlyCommand = require('./commands/hanteo-hourly');
 const { getComebackMode, getSheetData } = require('../src/helpers');
 const { CronJob } = require('cron');
 
@@ -29,14 +29,14 @@ async function main() {
       process.env.DISCORD_APPLICATION_ID,
       process.env.DISCORD_GUILD_ID
     ),
-    { body: [hanteoCommand.data.toJSON()] }
+    { body: [hanteoHourlyCommand.data.toJSON()] }
   );
   console.log('Slash commands registered.');
 
   // Bot client
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   client.commands = new Collection();
-  client.commands.set(hanteoCommand.data.name, hanteoCommand);
+  client.commands.set(hanteoHourlyCommand.data.name, hanteoHourlyCommand);
 
   client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
