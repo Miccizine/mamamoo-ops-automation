@@ -412,15 +412,25 @@ function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, ran
 
 // ─── Process Results ──────────────────────────────────────────────────────────
 
-function processResults(chartResults, chartType, dateStr, registryData, trackerMap, dirtyKeys) {
+function processResults(chartResults, chartType, dateStr, registryData, trackerMap, dirtyKeys, cfg) {
   const trackMap = new Map();
+  const comebackTrack = (cfg?.COMEBACK_TRACK || '').toLowerCase().trim();
+  const comebackMode  = cfg?.COMEBACK_MODE === 'ON';
 
   for (const [platform, entries] of chartResults) {
     for (const entry of entries) {
+      // Skip rank > 50 for realtime
+      if (chartType === 'realtime' && entry.rank > 50) continue;
+
       const match = findInRegistry(entry.title, entry.artist, registryData);
       if (!match) continue;
 
-      // First pass: upsert with empty movement to get prevPos
+      // Skip if not current comeback track (realtime only)
+      if (chartType === 'realtime' && comebackMode && comebackTrack) {
+        const entryNorm = norm(entry.title);
+        if (!entryNorm.includes(norm(comebackTrack)) && !norm(comebackTrack).includes(entryNorm)) continue;
+      }
+
       const { prevPos, isNewPeak } = upsertRecord(
         trackerMap, dirtyKeys,
         match.trackName, platform, chartType,
@@ -432,14 +442,30 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
         entry.htmlMovement, entry.isNew, entry.isReNew
       );
 
-      // Fill in movement
       const key = `${match.trackName}|${platform}|${chartType}`;
       trackerMap.get(key).movement = movementStr;
 
       if (!trackMap.has(match.trackName)) {
         trackMap.set(match.trackName, { match, entries: [] });
       }
-      trackMap.get(match.trackName).entries.push({ platform, rank: entry.rank, movementStr, isNewPeak });
+      trackMap.get(match.trackName).entries.push({
+        platform, rank: entry.rank, movementStr, isNewPeak,
+        isRising: entry.isNew || entry.isReNew || (entry.htmlMovement !== null ? entry.htmlMovement > 0 : (prevPos !== null && entry.rank < prevPos)),
+      });
+    }
+  }
+
+  // For realtime: filter tracks not on all 4 platforms, and filter out non-rising entries
+  if (chartType === 'realtime') {
+    const required = ['melon', 'genie', 'flo', 'bugs'];
+    for (const [trackName, data] of trackMap.entries()) {
+      const platforms = new Set(data.entries.map(e => e.platform));
+      const allPresent = required.every(p => platforms.has(p));
+      if (!allPresent) { trackMap.delete(trackName); continue; }
+
+      // Keep only if at least one platform is rising
+      const anyRising = data.entries.some(e => e.isRising);
+      if (!anyRising) { trackMap.delete(trackName); }
     }
   }
 
@@ -525,7 +551,7 @@ async function main() {
 
   console.log(`Korean charts — comeback:${isComeback} hour:${kstHour}KST date:${dateStr}`);
 
-  const runRealtime = isComeback;
+  const runRealtime = isComeback && (kstHour < 3 || kstHour >= 6);
   const runDaily    = kstHour >= 14;
   const runWeekly   = kstDate.getUTCDay() === 1 && kstHour >= 14;
 
@@ -539,6 +565,9 @@ async function main() {
     loadTracker(sheets),
   ]);
   const dirtyKeys = new Set();
+  const configData = await getSheetData(sheets, 'Config');
+  const cfg = {};
+  for (const row of configData) cfg[row[0]] = row[1] || '';
 
   // ── REALTIME ──────────────────────────────────────────────────────────────
   if (runRealtime) {
@@ -559,7 +588,9 @@ async function main() {
         } catch (e) { console.error(`  ${p}:`, e.message); }
       }
       if (results.size) {
-        const tm = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys);
+        const tm = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
+        const tm = processResults(results, 'daily', dateStr, registryData, trackerMap, dirtyKeys, cfg);
+        const tm = processResults(results, 'weekly', mondayStr, registryData, trackerMap, dirtyKeys, cfg);
         const lb = buildLabel('realtime');
         for (const { match, entries } of tm.values()) {
           entries.sort((a,b) => a.rank - b.rank);
