@@ -6,8 +6,8 @@ module.exports = {
   .setName('hanteo-hourly')
   .setDescription('Log Hanteo real-time chart snapshot')
   .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1920 KST').setRequired(true))
-  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true)),
-  .addStringOption(o => o.setName('song_tags').setDescription('Song/trending hashtags e.g. #Laundri_Is_Out_Now').setRequired(false)),
+  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true))
+  .addStringOption(o => o.setName('song_tags').setDescription('Song/trending hashtags e.g. #Laundri_Is_Out_Now').setRequired(false))
   
   async execute(interaction, sheets) {
     await interaction.deferReply({ ephemeral: true });
