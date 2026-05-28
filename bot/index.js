@@ -72,9 +72,15 @@ async function main() {
       const rawDate = releaseDateRow[1].toString().trim();
       let release;
       if (rawDate.includes('/')) {
+        // M/D/YYYY or MM/DD/YYYY — Google Sheets auto-format
         const [m, d, y] = rawDate.split('/');
         release = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+      } else if (rawDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        // MM-DD-YYYY
+        const [m, d, y] = rawDate.split('-');
+        release = new Date(`${y}-${m}-${d}`);
       } else {
+        // YYYYMMDD or YYYY-MM-DD
         const cleaned = rawDate.replace(/-/g, '');
         release = new Date(`${cleaned.slice(0,4)}-${cleaned.slice(4,6)}-${cleaned.slice(6,8)}`);
       }
