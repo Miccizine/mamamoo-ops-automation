@@ -104,10 +104,10 @@ async function main() {
 
         const memberTags = {
           MAMAMOO:  { tags: '#MAMAMOO #마마무', label: '@RBW_MAMAMOO' },
-          Solar:    { tags: '#SOLAR #솔라',     label: '@RBW_MAMAMOO' },
-          Moonbyul: { tags: '#MOONBYUL #문별',  label: '@RBW_MAMAMOO' },
-          Wheein:   { tags: '#WHEEIN #휘인',    label: '@WheeIn_0fficial' },
-          Hwasa:    { tags: '#HWASA #화사',     label: '@OfficialPnation' },
+          Solar:    { tags: '#SOLAR #솔라 #ソラ #金容仙',     label: '@RBW_MAMAMOO' },
+          Moonbyul: { tags: '#MOONBYUL #문별 #ムンビョル #文星伊',  label: '@RBW_MAMAMOO' },
+          Wheein:   { tags: '#WHEEIN #휘인 #フィイン #丁輝人',    label: '@WheeIn_0fficial' },
+          Hwasa:    { tags: '#HWASA #화사 #ファサ #華莎',     label: '@OfficialPnation' },
         };
         const tag = memberTags[artist] || { tags: '#MAMAMOO', label: '@RBW_MAMAMOO' };
 
