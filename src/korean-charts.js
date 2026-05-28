@@ -505,7 +505,7 @@ async function sendChartDraft(match, label, entries) {
 
 function buildLabel(chartType) {
   const kst = getKSTDate();
-  if (chartType === 'realtime') return `${getKSTHour()}KST`;
+  if (chartType === 'realtime') return `${String(getKSTHour()).padStart(2,'0')}KST`;
   if (chartType === 'daily')    return `Daily (${shortDate(kst)})`;
   if (chartType === 'weekly')   return `Weekly (${weekRangeLabel(getMostRecentMonday())})`;
   return chartType;
