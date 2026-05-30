@@ -588,11 +588,9 @@ async function main() {
         } catch (e) { console.error(`  ${p}:`, e.message); }
       }
       if (results.size) {
-        const tm = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
-        const tm = processResults(results, 'daily', dateStr, registryData, trackerMap, dirtyKeys, cfg);
-        const tm = processResults(results, 'weekly', mondayStr, registryData, trackerMap, dirtyKeys, cfg);
+        const tmRealtime = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
         const lb = buildLabel('realtime');
-        for (const { match, entries } of tm.values()) {
+        for (const { match, entries } of tmRealtime.values()) {
           entries.sort((a,b) => a.rank - b.rank);
           await sendChartDraft(match, lb, entries);
           await delay(DELAY_MS);
@@ -622,9 +620,9 @@ async function main() {
         } catch (e) { console.error(`  ${p}:`, e.message); }
       }
       if (results.size) {
-        const tm = processResults(results, 'daily', dateStr, registryData, trackerMap, dirtyKeys);
+        const tmDaily = processResults(results, 'daily', dateStr, registryData, trackerMap, dirtyKeys, cfg);
         const lb = buildLabel('daily');
-        for (const { match, entries } of tm.values()) {
+        for (const { match, entries } of tmDaily.values()) {
           entries.sort((a,b) => a.rank - b.rank);
           await sendChartDraft(match, lb, entries);
           await delay(DELAY_MS);
@@ -666,9 +664,9 @@ async function main() {
       } catch (e) { console.error('  bugs weekly:', e.message); }
 
       if (results.size) {
-        const tm = processResults(results, 'weekly', mondayStr, registryData, trackerMap, dirtyKeys);
+        const tmWeekly = processResults(results, 'weekly', mondayStr, registryData, trackerMap, dirtyKeys, cfg);
         const lb = buildLabel('weekly');
-        for (const { match, entries } of tm.values()) {
+        for (const { match, entries } of tmWeekly.values()) {
           entries.sort((a,b) => a.rank - b.rank);
           await sendChartDraft(match, lb, entries);
           await delay(DELAY_MS);
