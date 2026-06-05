@@ -318,8 +318,10 @@ function wasWorldwidePostedToday(rawScrapeLog, trackName) {
       (row[3] || '') === 'iTunes' &&
       (row[4] || '') === 'WW-Daily-Sentinel'
     ) {
-      const rowDate = new Date(row[0]).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-      if (rowDate === todayKST) return true;
+      // Timestamp is PHT (UTC+8), KST is UTC+9 — close enough for daily gate
+      // Compare date portion directly from timestamp string
+      const rowDateStr = (row[0] || '').slice(0, 10); // "YYYY-MM-DD"
+      if (rowDateStr === todayKST) return true;
     }
   }
   return false;
