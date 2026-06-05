@@ -457,25 +457,26 @@ async function main() {
       }
 
      // Daily thread post — fires at 6PM KST every day
-    if (is6pmKST) {
-      const history = getDailyHistory(rawScrapeLog, track.trackName);
-      // Append today's live count as current day entry (not yet in log)
-      const todayEntry = { views: viewCount, day: history.length + 1 };
-      const fullHistory = [...history, todayEntry];
-    
-      if (fullHistory.length > 0) {
-        const post = buildDailyThreadPost(
-          track.memberConfig, track.trackName, fullHistory,
-          track.primaryUrl, track.songHashtags
-        );
-        await sendToMilestoneWebhook({
-          embeds: [{
-            title: '📈 DAILY THREAD POST — Pending Approval',
-            color: 16711680,
-            description: post,
-            footer: { text: '✅ Post as reply to previous day | ❌ Discard' }
-          }]
-        });
+      if (is6pmKST) {
+        const history = getDailyHistory(rawScrapeLog, track.trackName);
+        // Append today's live count as current day entry (not yet in log)
+        const todayEntry = { views: viewCount, day: history.length + 1 };
+        const fullHistory = [...history, todayEntry];
+      
+        if (fullHistory.length > 0) {
+          const post = buildDailyThreadPost(
+            track.memberConfig, track.trackName, fullHistory,
+            track.primaryUrl, track.songHashtags
+          );
+          await sendToMilestoneWebhook({
+            embeds: [{
+              title: '📈 DAILY THREAD POST — Pending Approval',
+              color: 16711680,
+              description: post,
+              footer: { text: '✅ Post as reply to previous day | ❌ Discard' }
+            }]
+          });
+        }
       }
     }
 
