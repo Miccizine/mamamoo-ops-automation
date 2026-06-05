@@ -433,9 +433,16 @@ async function main() {
         }
       }
 
-      // 24hr post — fires once at 6PM KST on release day
+     // 24hr post — fires once at 6PM KST the day AFTER release
       if (is6pmKST) {
-        if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', 0, '24hr')) {
+        const releaseDate = cfg['COMEBACK_RELEASE_DATE'] || '';
+        const todayKST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+        const dayAfterRelease = releaseDate
+          ? new Date(new Date(releaseDate).getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
+          : null;
+        const past24hr = dayAfterRelease && todayKST >= dayAfterRelease;
+      
+        if (past24hr && !isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', 0, '24hr')) {
           cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', 0, '24hr', track.primaryUrl);
           await persistMilestone(sheets, track.trackName, track.album, 'YouTube', 0, '24hr', track.primaryUrl);
           const embed = build24hrPost(
@@ -449,23 +456,26 @@ async function main() {
         }
       }
 
-      // Daily thread post — fires at 6PM KST every day
-      if (is6pmKST) {
-        const history = getDailyHistory(rawScrapeLog, track.trackName);
-        if (history.length > 0) {
-          const post = buildDailyThreadPost(
-            track.memberConfig, track.trackName, history,
-            track.primaryUrl, track.songHashtags
-          );
-          await sendToMilestoneWebhook({
-            embeds: [{
-              title: '📈 DAILY THREAD POST — Pending Approval',
-              color: 16711680,
-              description: post,
-              footer: { text: '✅ Post as reply to previous day | ❌ Discard' }
-            }]
-          });
-        }
+     // Daily thread post — fires at 6PM KST every day
+    if (is6pmKST) {
+      const history = getDailyHistory(rawScrapeLog, track.trackName);
+      // Append today's live count as current day entry (not yet in log)
+      const todayEntry = { views: viewCount, day: history.length + 1 };
+      const fullHistory = [...history, todayEntry];
+    
+      if (fullHistory.length > 0) {
+        const post = buildDailyThreadPost(
+          track.memberConfig, track.trackName, fullHistory,
+          track.primaryUrl, track.songHashtags
+        );
+        await sendToMilestoneWebhook({
+          embeds: [{
+            title: '📈 DAILY THREAD POST — Pending Approval',
+            color: 16711680,
+            description: post,
+            footer: { text: '✅ Post as reply to previous day | ❌ Discard' }
+          }]
+        });
       }
     }
 
