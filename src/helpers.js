@@ -38,18 +38,17 @@ async function getSheetData(sheets, sheetName) {
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: `${sheetName}!A:Z`,
+    range: 'Raw Scrape Log!A:H',
     valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    resource: { values: [row] }
-  });
+    resource: { values: rawLogBuffer }
+    });
 }
 
-async function batchAppendRows(sheets, sheetName, rows) {
+async function batchAppendRows(sheets, sheetName, rows, range = 'A:Z') {
   if (rows.length === 0) return;
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: `${sheetName}!A:Z`,
+    range: `${sheetName}!${range}`,
     valueInputOption: 'RAW',
     resource: { values: rows }
   });
