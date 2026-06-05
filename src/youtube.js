@@ -222,7 +222,7 @@ function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashta
     return { base: `D${entry.day} - ${views}`, delta: ` (+${delta.toLocaleString()})${emoji}` };
   });
 
-  const footerLines = [primaryUrl, songHashtags, config.tags, closingTags]
+  const footerLines = [`🔗 ${primaryUrl}`, songHashtags, config.tags, closingTags]
     .filter(Boolean)
     .join('\n');
 
@@ -460,7 +460,7 @@ async function main() {
       if (is6pmKST) {
         const history = getDailyHistory(rawScrapeLog, track.trackName);
         // Append today's live count as current day entry (not yet in log)
-        const todayEntry = { views: viewCount, day: history.length + 1 };
+        const todayEntry = { views: viewCount, day: history.length + 1, combined: combinedViews !== null ? viewCount : undefined };
         const fullHistory = [...history, todayEntry];
       
         if (fullHistory.length > 0) {
