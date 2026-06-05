@@ -495,7 +495,7 @@ async function main() {
   }
 
   console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
-  await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer);
+  await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer, 'A:H');
 
   console.log('YouTube scraper complete.');
 }
