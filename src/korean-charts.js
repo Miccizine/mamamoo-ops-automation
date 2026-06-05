@@ -569,38 +569,32 @@ async function main() {
   const cfg = {};
   for (const row of configData) cfg[row[0]] = row[1] || '';
 
-  // ── REALTIME ──────────────────────────────────────────────────────────────
-  if (runRealtime) {
-    const realtimeKey = sentinelRealtimeKey(dateStr, kstHour);
-    if (sentinelAlreadyRan(trackerMap, realtimeKey, dateStr, kstHour)) {
-      console.log('Realtime already ran this hour. Skipping.');
-    } else {
-      console.log('Realtime...');
-      const results = new Map();
-      for (const p of ['melon','genie','flo','bugs']) {
-        const slug = GUYSOME_SLUG[p].realtime;
-        if (!slug) continue;
-        try {
-          await delay(DELAY_MS);
-          const data = await scrapeGuysome(slug, dateStr, kstHour);
-          if (data.length) results.set(p, data);
-          console.log(`  ${p}: ${data.length}`);
-        } catch (e) { console.error(`  ${p}:`, e.message); }
-      }
-      if (results.size) {
-        const tmRealtime = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
-        const lb = buildLabel('realtime');
-        for (const { match, entries } of tmRealtime.values()) {
-          entries.sort((a,b) => a.rank - b.rank);
-          await sendChartDraft(match, lb, entries);
-          await delay(DELAY_MS);
-        }
-        setSentinel(trackerMap, dirtyKeys, realtimeKey);
-      } else {
-        console.log('Realtime returned no data.');
-      }
-    }
+ // ── REALTIME ──────────────────────────────────────────────────────────────
+if (runRealtime) {
+  console.log('Realtime...');
+  const results = new Map();
+  for (const p of ['melon','genie','flo','bugs']) {
+    const slug = GUYSOME_SLUG[p].realtime;
+    if (!slug) continue;
+    try {
+      await delay(DELAY_MS);
+      const data = await scrapeGuysome(slug, dateStr, kstHour);
+      if (data.length) results.set(p, data);
+      console.log(`  ${p}: ${data.length}`);
+    } catch (e) { console.error(`  ${p}:`, e.message); }
   }
+  if (results.size) {
+    const tmRealtime = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
+    const lb = buildLabel('realtime');
+    for (const { match, entries } of tmRealtime.values()) {
+      entries.sort((a,b) => a.rank - b.rank);
+      await sendChartDraft(match, lb, entries);
+      await delay(DELAY_MS);
+    }
+  } else {
+    console.log('Realtime returned no data.');
+  }
+}
 
   // ── DAILY ─────────────────────────────────────────────────────────────────
   if (runDaily) {
