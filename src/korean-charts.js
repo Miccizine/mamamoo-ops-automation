@@ -621,7 +621,12 @@ if (runRealtime) {
           await sendChartDraft(match, lb, entries);
           await delay(DELAY_MS);
         }
-        setSentinel(trackerMap, dirtyKeys, SENTINEL_DAILY);
+        const dailyExpected = ['melon', 'genie', 'vibe', 'bugs'];
+        if (dailyExpected.every(p => results.has(p))) {
+          setSentinel(trackerMap, dirtyKeys, SENTINEL_DAILY);
+        } else {
+          console.log('Not all daily platforms available yet — will retry next run.');
+        }
       } else {
         console.log('Daily data not available yet. Will retry next run.');
       }
@@ -665,7 +670,12 @@ if (runRealtime) {
           await sendChartDraft(match, lb, entries);
           await delay(DELAY_MS);
         }
-        setSentinel(trackerMap, dirtyKeys, SENTINEL_WEEKLY);
+        const weeklyExpected = ['melon', 'genie', 'bugs'];
+        if (weeklyExpected.every(p => results.has(p))) {
+          setSentinel(trackerMap, dirtyKeys, SENTINEL_WEEKLY);
+        } else {
+          console.log('Not all weekly platforms available yet — will retry next run.');
+        }
       } else {
         console.log('Weekly data not available yet. Will retry next run.');
       }
