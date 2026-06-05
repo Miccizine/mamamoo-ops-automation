@@ -6,7 +6,7 @@ on:
     # Daily: every day at 14:30 KST = 05:30 UTC
     # Weekly: Monday at 14:00 KST = Monday 05:00 UTC
     # Run every hour — script decides what to execute based on KST time and mode
-    - cron: '0,5,15,30,45 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
