@@ -294,7 +294,9 @@ function getDailyHistory(rawScrapeLog, trackName) {
     if (rawScrapeLog[i][1] === trackName && rawScrapeLog[i][3] === 'YouTube') {
       entries.push({
         timestamp: rawScrapeLog[i][0],
-        views:     parseInt((rawScrapeLog[i][5] || '0').toString().replace(/,/g, ''), 10),
+        views: rawScrapeLog[i][6]
+          ? parseInt(rawScrapeLog[i][6].toString().replace(/,/g, ''), 10)
+          : parseInt((rawScrapeLog[i][5] || '0').toString().replace(/,/g, ''), 10),
         combined:  rawScrapeLog[i][6] ? parseInt(rawScrapeLog[i][6].toString().replace(/,/g, ''), 10) : undefined
       });
     }
@@ -401,7 +403,9 @@ async function main() {
 
       rawLogBuffer.push([
         getPHTTimestamp(), track.trackName, track.album, 'YouTube', countType,
-        viewCount, combinedViews !== null ? viewCount : '', track.primaryUrl
+        primaryStats.views,                          // col F: primary channel only
+        combinedViews !== null ? combinedViews : '', // col G: combined total
+        track.primaryUrl
       ]);
 
       // 1M view milestones
@@ -460,7 +464,11 @@ async function main() {
       if (is6pmKST) {
         const history = getDailyHistory(rawScrapeLog, track.trackName);
         // Append today's live count as current day entry (not yet in log)
-        const todayEntry = { views: viewCount, day: history.length + 1, combined: combinedViews !== null ? viewCount : undefined };
+        const todayEntry = {
+          views: combinedViews !== null ? combinedViews : primaryStats.views,
+          day: history.length + 1,
+          combined: combinedViews !== null ? combinedViews : undefined
+        };
         const fullHistory = [...history, todayEntry];
       
         if (fullHistory.length > 0) {
