@@ -77,14 +77,15 @@ function buildPeakMap(peakData) {
     if (!row[0] || !row[1]) continue;
     const key  = `${row[0]}|${row[1]}`;
     map[key] = {
-      rowIndex:     i + 1, // 1-indexed sheet row
+      rowIndex:     i + 1,
       peakPosition: parseInt((row[2] || '999').toString().replace(/,/g, ''), 10),
       dateAchieved: row[3] || '',
       lastSeen:     row[4] || '',
       entryDate:    row[5] || '',
       reentryDate:  row[6] || '',
       countOne:     parseInt((row[7] || '0').toString().replace(/,/g, ''), 10),
-      countriesOne: (row[8] || '').toString().trim()
+      countriesOne: (row[8] || '').toString().trim(),
+      lastPosition: row[9] ? parseInt(row[9].toString().replace(/,/g, ''), 10) : null
     };
   }
   return map;
@@ -128,22 +129,23 @@ async function updatePeakTracker(sheets, peakMap, updates) {
       const countOne     = u.position === 1 ? 1 : 0;
       const countriesOne = u.position === 1 ? u.country : '';
       await appendSheetRow(sheets, 'iTunes Peak Tracker', [
-        u.trackName, u.country, u.position, now, now, now, '', countOne, countriesOne
+        u.trackName, u.country, u.position, now, now, now, '', countOne, countriesOne, u.position
       ]);
       peakMap[key] = {
-        rowIndex:     -1, // newly appended, row index unknown until next load
+        rowIndex:     -1,
         peakPosition: u.position,
         dateAchieved: now,
         lastSeen:     now,
         entryDate:    now,
         reentryDate:  '',
         countOne,
-        countriesOne
+        countriesOne,
+        lastPosition: u.position
       };
     } else {
-      const newPeak          = Math.min(u.position, existing.peakPosition);
-      const newPeakDate      = u.position < existing.peakPosition ? now : existing.dateAchieved;
-      const newReentry       = u.isReentry ? now : existing.reentryDate;
+      const newPeak     = Math.min(u.position, existing.peakPosition);
+      const newPeakDate = u.position < existing.peakPosition ? now : existing.dateAchieved;
+      const newReentry  = u.isReentry ? now : existing.reentryDate;
 
       // #1 count logic
       let newCountOne     = existing.countOne;
@@ -165,18 +167,19 @@ async function updatePeakTracker(sheets, peakMap, updates) {
       peakMap[key].reentryDate   = newReentry;
       peakMap[key].countOne      = newCountOne;
       peakMap[key].countriesOne  = newCountriesOne;
+      peakMap[key].lastPosition  = u.position;
 
-      if (existing.rowIndex === -1) continue; // appended this run, skip update
+      if (existing.rowIndex === -1) continue;
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range:            `iTunes Peak Tracker!C${existing.rowIndex}:I${existing.rowIndex}`,
+        range:            `iTunes Peak Tracker!C${existing.rowIndex}:J${existing.rowIndex}`,
         valueInputOption: 'RAW',
         resource: {
           values: [[
             newPeak, newPeakDate, now,
             existing.entryDate, newReentry,
-            newCountOne, newCountriesOne
+            newCountOne, newCountriesOne, u.position
           ]]
         }
       });
@@ -215,18 +218,15 @@ function buildItunesNotification({
   const lines = [header, ''];
   lines.push(`#${position} ${isWorldwide ? `${config.handle} - ${trackName} ${movement}` : country}`);
 
-  // #1 count line
   if (position === 1 && countOne > 0) {
     lines.push('');
     lines.push(`${countOne}${getOrdinalSuffix(countOne)} #1 (Song)`);
   }
 
-  // Day count line
   if (dayCount > 1) {
     lines.push(`[DAY ${dayCount}${isReentryFlag ? ' since re-entry' : ''} | PEAK #${effectivePeak}]`);
   }
 
-  // Buy CTA — only on #1 posts in comeback mode with album
   if (
     position === 1 &&
     comebackConfig &&
@@ -262,11 +262,9 @@ function buildCloseToOnePost(trackName, entries, appleUrl, memberConfig, songHas
   const closingTags = buildClosingTags(config);
   const MAX_CHARS   = 280;
 
-  const header = `iTunes Song Chart - ${trackName}\n\nCountries close to #1${isContinued ? '\n(Continued)' : ''}`;
-  const footer  = [`🔗 ${appleUrl}`, songHashtags, config.tags, closingTags]
+  const footer = [`🔗 ${appleUrl}`, songHashtags, config.tags, closingTags]
     .filter(Boolean).join('\n');
 
-  // Build lines and split into posts respecting 280 char limit
   const posts   = [];
   let current   = [];
 
@@ -295,7 +293,7 @@ function buildCloseToOnePost(trackName, entries, appleUrl, memberConfig, songHas
   return posts;
 }
 
-// ── Check close-to-#1 hourly gate ────────────────────────────────────────────
+// ── Sentinel checks ───────────────────────────────────────────────────────────
 
 function wasCloseToOnePostedThisHour(rawScrapeLog, trackName) {
   const hourKey = getPHTDateHourKey();
@@ -307,6 +305,22 @@ function wasCloseToOnePostedThisHour(rawScrapeLog, trackName) {
       (row[4] || '') === 'Close-to-#1 Sentinel' &&
       (row[0] || '').startsWith(hourKey.replace('T', ' '))
     ) return true;
+  }
+  return false;
+}
+
+function wasWorldwidePostedToday(rawScrapeLog, trackName) {
+  const todayKST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+  for (let i = rawScrapeLog.length - 1; i >= 1; i--) {
+    const row = rawScrapeLog[i];
+    if (
+      (row[1] || '') === trackName &&
+      (row[3] || '') === 'iTunes' &&
+      (row[4] || '') === 'WW-Daily-Sentinel'
+    ) {
+      const rowDate = new Date(row[0]).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+      if (rowDate === todayKST) return true;
+    }
   }
   return false;
 }
@@ -432,7 +446,7 @@ async function scrapeCountryCharts(
       const dayCount      = existing
         ? getDayCount(existing.entryDate, existing.reentryDate || '')
         : 1;
-      const prevPosition  = existing ? existing.peakPosition : null;
+      const prevPosition  = existing ? existing.lastPosition : null;
       const countOne      = existing
         ? (position === 1
             ? (() => {
@@ -449,15 +463,23 @@ async function scrapeCountryCharts(
 
       peakUpdates.push({ trackName, country, position, isReentry: reentryFlag });
 
-      // Close-to-#1 collection (comeback mode only, top 50)
+      // Close-to-#1 collection (comeback mode only, positions 2-50)
       if (isComeback && position <= 50 && position > 1) {
-        const isComingTrack = comebackConfig && trackName === comebackConfig.trackName;
-        if (isComingTrack) {
+        if (comebackConfig && trackName === comebackConfig.trackName) {
           closeToOneEntries.push({ position, country });
         }
       }
 
-      const shouldNotify = recentRelease || reentryFlag || isNewPeak || isNew;
+      // Country notify suppression:
+      // - no change from last seen position → skip
+      // - position worsened → skip
+      // - already at #1 → skip (handled by #1-specific logic)
+      const lastPosition = existing ? existing.lastPosition : null;
+      const isEqual      = !isNew && !reentryFlag && lastPosition !== null && lastPosition === position;
+      const isWorse      = !isNew && !reentryFlag && lastPosition !== null && position > lastPosition;
+      const isAlreadyOne = position === 1;
+
+      const shouldNotify = (isNew || reentryFlag || isNewPeak) && !isEqual && !isWorse && !isAlreadyOne;
       if (!shouldNotify) continue;
 
       const draft = buildItunesNotification({
@@ -467,7 +489,7 @@ async function scrapeCountryCharts(
         memberConfig, appleUrl, songHashtags,
         isNew, isReentryFlag: reentryFlag,
         countOne,
-        comebackConfig: position === 1 && isComeback ? comebackConfig : null
+        comebackConfig: null // #1 CTA only on worldwide, not country
       });
 
       notifications.push({
@@ -485,7 +507,8 @@ async function scrapeCountryCharts(
 
 async function scrapeWorldwideChart(
   sheets, registryData, peakMap,
-  rawLogBuffer, peakUpdates, notifications
+  rawLogBuffer, peakUpdates, notifications,
+  rawScrapeLog
 ) {
   const processedWorldwide = new Set();
 
@@ -531,16 +554,16 @@ async function scrapeWorldwideChart(
       const releaseDate  = match.row[3];
       const memberConfig = getMemberConfig(match.row);
 
-      const peakKey     = `${trackName}|Worldwide`;
-      const existing    = peakMap[peakKey];
-      const reentryFlag = existing ? isReentry(existing.lastSeen) : false;
+      const peakKey      = `${trackName}|Worldwide`;
+      const existing     = peakMap[peakKey];
+      const reentryFlag  = existing ? isReentry(existing.lastSeen) : false;
       const recentRelease = isRecentRelease(releaseDate);
-      const isNew       = !existing;
-      const isNewPeak   = existing && position < existing.peakPosition;
-      const dayCount    = existing
+      const isNew        = !existing;
+      const isNewPeak    = existing && position < existing.peakPosition;
+      const dayCount     = existing
         ? getDayCount(existing.entryDate, existing.reentryDate || '')
         : 1;
-      const prevPosition = existing ? existing.peakPosition : null;
+      const prevPosition = existing ? existing.lastPosition : null;
       const countOne     = existing
         ? (position === 1
             ? (() => {
@@ -557,8 +580,12 @@ async function scrapeWorldwideChart(
 
       peakUpdates.push({ trackName, country: 'Worldwide', position, isReentry: reentryFlag });
 
-      const shouldNotify = recentRelease || reentryFlag || isNewPeak || isNew;
-      if (!shouldNotify) continue;
+      // Worldwide: post once per KST day per track regardless of movement
+      const alreadyPostedToday = wasWorldwidePostedToday(rawScrapeLog, trackName);
+      if (alreadyPostedToday) {
+        console.log(`Worldwide already posted today for ${trackName}, skipping.`);
+        continue;
+      }
 
       const draft = buildItunesNotification({
         trackName, position, country: 'Worldwide', prevPosition,
@@ -575,6 +602,12 @@ async function scrapeWorldwideChart(
         title: '📊 CHART UPDATE — Pending Approval',
         needsValidation: isNew && !recentRelease
       });
+
+      // Log sentinel so this track doesn't post again today
+      rawLogBuffer.push([
+        getPHTTimestamp(), trackName, '', 'iTunes', 'WW-Daily-Sentinel',
+        position, '', 'worldwide-daily'
+      ]);
     }
 
     await new Promise(r => setTimeout(r, 2000));
@@ -600,22 +633,12 @@ async function main() {
       return;
     }
   }
-  // In normal mode at minute 0: this is the 6-hour cron, proceed normally
 
-  // Normal mode: skip if comeback mode is ON (20-min cron handles it)
-  if (!isComeback) {
-    const hour = getPHTHour();
-    // 6-hour cron runs at 0,6,12,18 PHT — allow through in normal mode
-    // In comeback mode this function exits here; 20-min cron takes over
-  }
-
-  // Load all data upfront
   const registryData = await getSheetData(sheets, 'Master Registry');
   const peakData     = await getSheetData(sheets, 'iTunes Peak Tracker');
-  const rawScrapeLog = isComeback ? await getSheetData(sheets, 'Raw Scrape Log') : [];
+  const rawScrapeLog = await getSheetData(sheets, 'Raw Scrape Log');
   const peakMap      = buildPeakMap(peakData);
 
-  // Comeback config
   let comebackConfig = null;
   if (isComeback) {
     const cfg = await getComebackConfig(sheets);
@@ -626,12 +649,11 @@ async function main() {
     };
   }
 
-  const rawLogBuffer    = [];
-  const peakUpdates     = [];
-  const notifications   = [];
-  const closeToOneEntries = []; // collected during country scrape
+  const rawLogBuffer      = [];
+  const peakUpdates       = [];
+  const notifications     = [];
+  const closeToOneEntries = [];
 
-  // Run scrapers — shared peakMap, shared buffers
   await scrapeCountryCharts(
     sheets, registryData, peakMap,
     rawLogBuffer, peakUpdates, notifications,
@@ -640,7 +662,8 @@ async function main() {
 
   await scrapeWorldwideChart(
     sheets, registryData, peakMap,
-    rawLogBuffer, peakUpdates, notifications
+    rawLogBuffer, peakUpdates, notifications,
+    rawScrapeLog
   );
 
   // ── Close-to-#1 post (comeback mode, hourly gated) ───────────────────────
@@ -648,7 +671,6 @@ async function main() {
     const alreadyPosted = wasCloseToOnePostedThisHour(rawScrapeLog, comebackConfig.trackName);
 
     if (!alreadyPosted) {
-      // Sort by position ascending
       closeToOneEntries.sort((a, b) => a.position - b.position);
 
       const comebackRow = (() => {
@@ -683,7 +705,6 @@ async function main() {
           });
         }
 
-        // Log sentinel to Raw Scrape Log for hourly dedup
         rawLogBuffer.push([
           getPHTTimestamp(),
           comebackConfig.trackName,
@@ -704,7 +725,7 @@ async function main() {
 
   // ── Write logs ────────────────────────────────────────────────────────────
   console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
-  await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer);
+  await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer, 'A:H');
 
   // ── Update peak tracker ───────────────────────────────────────────────────
   console.log(`Updating peak tracker: ${peakUpdates.length} entries...`);
