@@ -26,10 +26,12 @@ const ARTIST_PAGES = [
   { url: 'https://kworb.net/itunes/artist/hwasa.html',    label: 'Hwasa' }
 ];
 
-const WORLDWIDE_URLS = [
+const WORLDWIDE_SONG_URLS = [
   'https://kworb.net/ww/index.html',
   'https://kworb.net/ww/index_full.html'
 ];
+
+const WORLDWIDE_ALBUM_URL = 'https://kworb.net/aww/';
 
 const MAMAMOO_KEYWORDS = [
   'mamamoo', 'solar', 'moonbyul', 'wheein', 'hwasa',
@@ -53,7 +55,7 @@ function parseTableRows(html) {
   return results;
 }
 
-// ── PHT helpers ───────────────────────────────────────────────────────────────
+// ── Time helpers ──────────────────────────────────────────────────────────────
 
 function getPHTHour() {
   return parseInt(new Date().toLocaleString('en-US', {
@@ -66,6 +68,16 @@ function getPHTDateHourKey() {
   const d   = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
   const h   = getPHTHour();
   return `${d}T${String(h).padStart(2, '0')}`;
+}
+
+function getKSTDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+function getKSTHour() {
+  return parseInt(new Date().toLocaleString('en-US', {
+    timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false
+  }), 10);
 }
 
 // ── Peak Map ──────────────────────────────────────────────────────────────────
@@ -147,7 +159,6 @@ async function updatePeakTracker(sheets, peakMap, updates) {
       const newPeakDate = u.position < existing.peakPosition ? now : existing.dateAchieved;
       const newReentry  = u.isReentry ? now : existing.reentryDate;
 
-      // #1 count logic
       let newCountOne     = existing.countOne;
       let newCountriesOne = existing.countriesOne;
       if (u.position === 1) {
@@ -160,7 +171,6 @@ async function updatePeakTracker(sheets, peakMap, updates) {
         }
       }
 
-      // Update in-memory
       peakMap[key].peakPosition  = newPeak;
       peakMap[key].dateAchieved  = newPeakDate;
       peakMap[key].lastSeen      = now;
@@ -193,11 +203,10 @@ function buildItunesNotification({
   trackName, position, country, prevPosition,
   dayCount, peakPosition, memberConfig,
   appleUrl, songHashtags, isNew, isReentryFlag,
-  countOne, comebackConfig
+  countOne, comebackConfig, isAlbumChart
 }) {
-  const config      = memberConfig;
-  const closingTags = buildClosingTags(config);
-
+  const config        = memberConfig;
+  const closingTags   = buildClosingTags(config);
   const effectivePeak = Math.min(position, peakPosition);
 
   const movement = isNew || isReentryFlag
@@ -210,17 +219,18 @@ function buildItunesNotification({
           : '(=)'
       : '(NEW)';
 
-  const isWorldwide = country === 'Worldwide';
-  const header      = isWorldwide
-    ? 'Worldwide iTunes Song Chart 🌏'
-    : `iTunes Song Chart - ${trackName}`;
+  const isWorldwide = country === 'Worldwide' || country === 'Worldwide-Album';
+  let header;
+  if (isAlbumChart)      header = 'Worldwide iTunes Album Chart 🌍';
+  else if (isWorldwide)  header = 'Worldwide iTunes Song Chart 🌏';
+  else                   header = `iTunes Song Chart - ${trackName}`;
 
   const lines = [header, ''];
   lines.push(`#${position} ${isWorldwide ? `${config.handle} - ${trackName} ${movement}` : country}`);
 
   if (position === 1 && countOne > 0) {
     lines.push('');
-    lines.push(`${countOne}${getOrdinalSuffix(countOne)} #1 (Song)`);
+    lines.push(`${countOne}${getOrdinalSuffix(countOne)} #1 (${isAlbumChart ? 'Album' : 'Song'})`);
   }
 
   if (dayCount > 1) {
@@ -309,20 +319,17 @@ function wasCloseToOnePostedThisHour(rawScrapeLog, trackName) {
   return false;
 }
 
-function wasWorldwidePostedToday(rawScrapeLog, trackName) {
-  const todayKST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+// col G stores KST date string at log time — avoids PHT/KST timezone mismatch
+function wasPostedTodayKST(rawScrapeLog, trackName, sentinelType) {
+  const todayKST = getKSTDateString();
   for (let i = rawScrapeLog.length - 1; i >= 1; i--) {
     const row = rawScrapeLog[i];
     if (
       (row[1] || '') === trackName &&
       (row[3] || '') === 'iTunes' &&
-      (row[4] || '') === 'WW-Daily-Sentinel'
-    ) {
-      // Timestamp is PHT (UTC+8), KST is UTC+9 — close enough for daily gate
-      // Compare date portion directly from timestamp string
-      const rowDateStr = (row[0] || '').slice(0, 10); // "YYYY-MM-DD"
-      if (rowDateStr === todayKST) return true;
-    }
+      (row[4] || '') === sentinelType &&
+      (row[6] || '') === todayKST
+    ) return true;
   }
   return false;
 }
@@ -465,17 +472,12 @@ async function scrapeCountryCharts(
 
       peakUpdates.push({ trackName, country, position, isReentry: reentryFlag });
 
-      // Close-to-#1 collection (comeback mode only, positions 2-50)
       if (isComeback && position <= 50 && position > 1) {
         if (comebackConfig && trackName === comebackConfig.trackName) {
           closeToOneEntries.push({ position, country });
         }
       }
 
-      // Country notify suppression:
-      // - no change from last seen position → skip
-      // - position worsened → skip
-      // - already at #1 → skip (handled by #1-specific logic)
       const lastPosition = existing ? existing.lastPosition : null;
       const isEqual      = !isNew && !reentryFlag && lastPosition !== null && lastPosition === position;
       const isWorse      = !isNew && !reentryFlag && lastPosition !== null && position > lastPosition;
@@ -491,7 +493,8 @@ async function scrapeCountryCharts(
         memberConfig, appleUrl, songHashtags,
         isNew, isReentryFlag: reentryFlag,
         countOne,
-        comebackConfig: null // #1 CTA only on worldwide, not country
+        comebackConfig: null,
+        isAlbumChart: false
       });
 
       notifications.push({
@@ -505,23 +508,23 @@ async function scrapeCountryCharts(
   }
 }
 
-// ── Worldwide Chart Scraper ───────────────────────────────────────────────────
+// ── Worldwide Song Chart Scraper ──────────────────────────────────────────────
 
-async function scrapeWorldwideChart(
-  sheets, registryData, peakMap,
+async function scrapeWorldwideSongChart(
+  registryData, peakMap,
   rawLogBuffer, peakUpdates, notifications,
   rawScrapeLog
 ) {
   const processedWorldwide = new Set();
 
-  for (const url of WORLDWIDE_URLS) {
+  for (const url of WORLDWIDE_SONG_URLS) {
     let html;
     try {
       const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       html = await res.text();
     } catch (e) {
-      console.error(`Worldwide fetch error: ${e.message}`);
+      console.error(`Worldwide song fetch error: ${e.message}`);
       continue;
     }
 
@@ -546,13 +549,11 @@ async function scrapeWorldwideChart(
       processedWorldwide.add(wwKey);
 
       const match = findMatchInRegistry(trackName, registryData);
-      if (!match) {
-        await flagNewRelease(sheets, trackName, '', 'iTunes Worldwide/kworb', url);
-        continue;
-      }
+      if (!match) continue;
 
       const appleUrl     = (match.row[16] || '').trim();
       const songHashtags = (match.row[17] || '').trim();
+      const album        = (match.row[2]  || '').trim();
       const releaseDate  = match.row[3];
       const memberConfig = getMemberConfig(match.row);
 
@@ -576,16 +577,15 @@ async function scrapeWorldwideChart(
         : position === 1 ? 1 : 0;
 
       rawLogBuffer.push([
-        getPHTTimestamp(), trackName, '', 'iTunes', 'Worldwide Position',
+        getPHTTimestamp(), trackName, album, 'iTunes', 'Worldwide Position',
         position, '', url
       ]);
 
       peakUpdates.push({ trackName, country: 'Worldwide', position, isReentry: reentryFlag });
 
-      // Worldwide: post once per KST day per track regardless of movement
-      const alreadyPostedToday = wasWorldwidePostedToday(rawScrapeLog, trackName);
+      const alreadyPostedToday = wasPostedTodayKST(rawScrapeLog, trackName, 'WW-Daily-Sentinel');
       if (alreadyPostedToday) {
-        console.log(`Worldwide already posted today for ${trackName}, skipping.`);
+        console.log(`WW song already posted today for ${trackName}, skipping.`);
         continue;
       }
 
@@ -596,7 +596,8 @@ async function scrapeWorldwideChart(
         memberConfig, appleUrl, songHashtags,
         isNew, isReentryFlag: reentryFlag,
         countOne,
-        comebackConfig: null
+        comebackConfig: null,
+        isAlbumChart: false
       });
 
       notifications.push({
@@ -605,15 +606,136 @@ async function scrapeWorldwideChart(
         needsValidation: isNew && !recentRelease
       });
 
-      // Log sentinel so this track doesn't post again today
+      // Sentinel stores KST date in col G for reliable daily gate
       rawLogBuffer.push([
-        getPHTTimestamp(), trackName, '', 'iTunes', 'WW-Daily-Sentinel',
-        position, '', 'worldwide-daily'
+        getPHTTimestamp(), trackName, album, 'iTunes', 'WW-Daily-Sentinel',
+        position, getKSTDateString(), 'worldwide-daily'
       ]);
     }
 
     await new Promise(r => setTimeout(r, 2000));
   }
+}
+
+// ── Worldwide Album Chart Scraper ─────────────────────────────────────────────
+
+async function scrapeWorldwideAlbumChart(
+  sheets, registryData, peakMap,
+  rawLogBuffer, peakUpdates, notifications,
+  rawScrapeLog
+) {
+  let html;
+  try {
+    const res = await fetch(WORLDWIDE_ALBUM_URL, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    html = await res.text();
+  } catch (e) {
+    console.error(`Worldwide album fetch error: ${e.message}`);
+    return;
+  }
+
+  const rows = parseTableRows(html);
+  const processedAlbums = new Set();
+
+  for (const cells of rows) {
+    const rowText   = cells.join(' ').toLowerCase();
+    const isMamamoo = MAMAMOO_KEYWORDS.some(kw => rowText.includes(kw));
+    if (!isMamamoo) continue;
+
+    const position    = parseInt(cells[0].replace(/,/g, ''), 10) || 0;
+    const artistTitle = cells[2] || cells[1] || '';
+    if (position === 0 || !artistTitle) continue;
+
+    // Album chart: "Artist - Album"
+    const parts     = artistTitle.split(' - ');
+    const albumName = parts.length > 1
+      ? parts.slice(1).join(' - ').trim()
+      : artistTitle.trim();
+
+    const albumKey = `${albumName}|${position}`;
+    if (processedAlbums.has(albumKey)) continue;
+    processedAlbums.add(albumKey);
+
+    // Match against registry by album column (col C)
+    let matchedRow = null;
+    const normAlbum = albumName.toLowerCase();
+    for (let i = 1; i < registryData.length; i++) {
+      const regAlbum = (registryData[i][2] || '').trim().toLowerCase();
+      if (!regAlbum) continue;
+      if ((registryData[i][11] || '').toString().trim().toLowerCase() !== 'yes') continue;
+      if (regAlbum === normAlbum || regAlbum.includes(normAlbum) || normAlbum.includes(regAlbum)) {
+        matchedRow = registryData[i];
+        break;
+      }
+    }
+
+    if (!matchedRow) {
+      await flagNewRelease(sheets, albumName, '', 'iTunes Album Worldwide/kworb', WORLDWIDE_ALBUM_URL);
+      continue;
+    }
+
+    const album        = matchedRow[2];
+    const releaseDate  = matchedRow[3];
+    const appleUrl     = (matchedRow[16] || '').trim();
+    const songHashtags = (matchedRow[17] || '').trim();
+    const memberConfig = getMemberConfig(matchedRow);
+
+    const peakKey      = `${albumName}|Worldwide-Album`;
+    const existing     = peakMap[peakKey];
+    const reentryFlag  = existing ? isReentry(existing.lastSeen) : false;
+    const recentRelease = isRecentRelease(releaseDate);
+    const isNew        = !existing;
+    const isNewPeak    = existing && position < existing.peakPosition;
+    const dayCount     = existing
+      ? getDayCount(existing.entryDate, existing.reentryDate || '')
+      : 1;
+    const prevPosition = existing ? existing.lastPosition : null;
+    const countOne     = existing
+      ? (position === 1
+          ? (() => {
+              const listed = (existing.countriesOne || '').split(',').map(c => c.trim()).filter(Boolean);
+              return listed.includes('Worldwide') ? existing.countOne : existing.countOne + 1;
+            })()
+          : existing.countOne)
+      : position === 1 ? 1 : 0;
+
+    rawLogBuffer.push([
+      getPHTTimestamp(), albumName, album, 'iTunes', 'Worldwide Album Position',
+      position, '', WORLDWIDE_ALBUM_URL
+    ]);
+
+    peakUpdates.push({ trackName: albumName, country: 'Worldwide-Album', position, isReentry: reentryFlag });
+
+    const alreadyPostedToday = wasPostedTodayKST(rawScrapeLog, albumName, 'WWA-Daily-Sentinel');
+    if (alreadyPostedToday) {
+      console.log(`WW album already posted today for ${albumName}, skipping.`);
+      continue;
+    }
+
+    const draft = buildItunesNotification({
+      trackName: albumName, position, country: 'Worldwide-Album', prevPosition,
+      dayCount,
+      peakPosition:  existing ? existing.peakPosition : position,
+      memberConfig, appleUrl, songHashtags,
+      isNew, isReentryFlag: reentryFlag,
+      countOne,
+      comebackConfig: null,
+      isAlbumChart: true
+    });
+
+    notifications.push({
+      draft, trackName: albumName, country: 'Worldwide-Album', position,
+      title: '📊 ALBUM CHART UPDATE — Pending Approval',
+      needsValidation: isNew && !recentRelease
+    });
+
+    rawLogBuffer.push([
+      getPHTTimestamp(), albumName, album, 'iTunes', 'WWA-Daily-Sentinel',
+      position, getKSTDateString(), 'worldwide-album-daily'
+    ]);
+  }
+
+  await new Promise(r => setTimeout(r, 2000));
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -624,7 +746,8 @@ async function main() {
 
   const sheets     = await getSheetsClient();
   const isComeback = await getComebackMode(sheets);
-  console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
+  const kstHour    = getKSTHour();
+  console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'} | KST hour: ${kstHour}`);
 
   // Self-gate: 20-min cron exits immediately in normal mode
   if (!isComeback) {
@@ -656,17 +779,29 @@ async function main() {
   const notifications     = [];
   const closeToOneEntries = [];
 
+  // Country charts — always run
   await scrapeCountryCharts(
     sheets, registryData, peakMap,
     rawLogBuffer, peakUpdates, notifications,
     isComeback, comebackConfig, closeToOneEntries
   );
 
-  await scrapeWorldwideChart(
-    sheets, registryData, peakMap,
-    rawLogBuffer, peakUpdates, notifications,
-    rawScrapeLog
-  );
+  // Worldwide charts — only after 4AM KST (kworb updates around then)
+  if (kstHour >= 4) {
+    await scrapeWorldwideSongChart(
+      registryData, peakMap,
+      rawLogBuffer, peakUpdates, notifications,
+      rawScrapeLog
+    );
+
+    await scrapeWorldwideAlbumChart(
+      sheets, registryData, peakMap,
+      rawLogBuffer, peakUpdates, notifications,
+      rawScrapeLog
+    );
+  } else {
+    console.log(`KST hour ${kstHour} — skipping worldwide charts (updates after 4AM KST).`);
+  }
 
   // ── Close-to-#1 post (comeback mode, hourly gated) ───────────────────────
   if (isComeback && closeToOneEntries.length > 0 && comebackConfig?.trackName) {
