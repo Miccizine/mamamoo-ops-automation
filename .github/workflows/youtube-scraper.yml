@@ -2,8 +2,9 @@ name: YouTube Scraper
 
 on:
   schedule:
-    - cron: '0 */12 * * *'   # Normal: every 12 hours
-    - cron: '0 */6 * * *'    # Comeback: every 6 hours (script self-gates)
+    - cron: '0 9 * * *'    # Daily 6PM KST — comeback daily thread + 24hr post
+    - cron: '0 */12 * * *' # Normal: every 12 hours
+    - cron: '0 */6 * * *'  # Comeback: every 6 hours (script self-gates)
   workflow_dispatch:
 
 jobs:
