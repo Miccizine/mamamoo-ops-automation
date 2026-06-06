@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
@@ -28,4 +28,5 @@ jobs:
           DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
           GOOGLE_SHEETS_ID:            ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: node src/allkill.js
+          DISCORD_CHARTS_WEBHOOK:      ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
+        run: node src/all-kill.js
