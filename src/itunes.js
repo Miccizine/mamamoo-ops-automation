@@ -688,15 +688,15 @@ async function scrapeWorldwideAlbumChart(
       }
     }
 
-    // Verify matched registry row belongs to a Mamamoo artist
-    const registryArtist = (match.row[1] || '').trim();
-    if (!isMamamooRelated(registryArtist)) {
-      console.log(`Skip WW: "${trackName}" matched non-Mamamoo registry row (${registryArtist})`);
+    if (!matchedRow) {
+      await flagNewRelease(sheets, albumName, '', 'iTunes Album Worldwide/kworb', WORLDWIDE_ALBUM_URL);
       continue;
     }
 
-    if (!matchedRow) {
-      await flagNewRelease(sheets, albumName, '', 'iTunes Album Worldwide/kworb', WORLDWIDE_ALBUM_URL);
+    // Verify matched registry row belongs to a Mamamoo artist
+    const registryArtist = (matchedRow[1] || '').trim();
+    if (!isMamamooRelated(registryArtist)) {
+      console.log(`Skip WW Album: "${albumName}" matched non-Mamamoo registry row (${registryArtist})`);
       continue;
     }
 
