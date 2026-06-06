@@ -469,21 +469,22 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
     }
   }
 
+  // For daily: non-comeback tracks must appear on all 4 platforms
+  if (chartType === 'daily') {
+    const required = ['melon', 'genie', 'vibe', 'bugs'];
+    for (const [trackName, data] of trackMap.entries()) {
+      const isComeback = comebackMode && comebackTrack &&
+        (norm(trackName).includes(norm(comebackTrack)) || norm(comebackTrack).includes(norm(trackName)));
+      if (isComeback) continue; // comeback track always posts
+      const platforms = new Set(data.entries.map(e => e.platform));
+      const allPresent = required.every(p => platforms.has(p));
+      if (!allPresent) trackMap.delete(trackName);
+    }
+  }
+
   return trackMap;
 }
 
-// For daily: non-comeback tracks must appear on all 4 platforms
-if (chartType === 'daily') {
-  const required = ['melon', 'genie', 'vibe', 'bugs'];
-  for (const [trackName, data] of trackMap.entries()) {
-    const isComeback = comebackMode && comebackTrack &&
-      (norm(trackName).includes(norm(comebackTrack)) || norm(comebackTrack).includes(norm(trackName)));
-    if (isComeback) continue; // comeback track always posts
-    const platforms = new Set(data.entries.map(e => e.platform));
-    const allPresent = required.every(p => platforms.has(p));
-    if (!allPresent) trackMap.delete(trackName);
-  }
-}
 
 // ─── Discord ──────────────────────────────────────────────────────────────────
 
