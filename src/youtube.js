@@ -382,7 +382,7 @@ async function main() {
 
     const nowKST  = new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false });
     const kstHour = parseInt(nowKST, 10);
-    const is6pmKST = kstHour === 18;
+    const is6pmKST = kstHour >= 18 && kstHour < 20;
 
     for (const track of trackQueue) {
       const primaryStats   = statsMap[track.primaryId]   || { views: 0, likes: 0 };
