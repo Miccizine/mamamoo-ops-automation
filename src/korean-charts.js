@@ -6,7 +6,7 @@ const { getSheetsClient, getSheetData, getMemberConfig, getComebackMode } = requ
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DISCORD_WEBHOOK = process.env.DISCORD_MILESTONE_WEBHOOK;
+const DISCORD_WEBHOOK = process.env.DISCORD_CHARTS_WEBHOOK;
 const SHEETS_ID       = process.env.GOOGLE_SHEETS_ID;
 const TRACKER_SHEET   = 'Korean Charts Tracker'; // rename Sheet 12 to this name
 const DELAY_MS        = 2000;
