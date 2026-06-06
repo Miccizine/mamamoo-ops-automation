@@ -12,7 +12,7 @@ const {
 const fetch = require('node-fetch');
 
 const DAILY_URL  = 'https://kworb.net/spotify/country/kr_daily.html';
-const WEBHOOK    = process.env.DISCORD_MILESTONE_WEBHOOK;
+const WEBHOOK    = process.env.DISCORD_CHARTS_WEBHOOK;
 const COLOR      = 1947988;
 const SHEET_NAME = 'Spotify Korea Chart';
 const HEADERS    = ['Track Name', 'Artist', 'Peak Position', 'Date Achieved', 'Last Seen', 'Entry Date', 'Re-entry Date', 'Current Day Count', 'Current Position'];
