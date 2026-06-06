@@ -233,8 +233,8 @@ function buildItunesNotification({
 
   const isWorldwide = country === 'Worldwide' || country === 'Worldwide-Album';
   let header;
-  if (isAlbumChart)      header = 'Worldwide iTunes Album Chart 🌍';
-  else if (isWorldwide)  header = 'Worldwide iTunes Song Chart 🌏';
+  if (isAlbumChart)      header = 'Worldwide iTunes Album Chart 🌐';
+  else if (isWorldwide)  header = 'Worldwide iTunes Song Chart 🌐';
   else                   header = `iTunes Song Chart - ${trackName}`;
 
   const lines = [header, ''];
@@ -246,7 +246,7 @@ function buildItunesNotification({
   }
 
   if (dayCount > 1) {
-    lines.push(`[DAY ${dayCount}${isReentryFlag ? ' since re-entry' : ''} | PEAK #${effectivePeak}]`);
+    lines.push(`\n[DAY ${dayCount}${isReentryFlag ? ' since re-entry' : ''} | PEAK #${effectivePeak}]`);
   }
 
   if (
