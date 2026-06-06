@@ -38,10 +38,11 @@ async function getSheetData(sheets, sheetName) {
 async function appendSheetRow(sheets, sheetName, row) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEETS_ID,
-    range: 'Raw Scrape Log!A:H',
+    range: `${sheetName}!A:Z`,
     valueInputOption: 'RAW',
-    resource: { values: rawLogBuffer }
-    });
+    insertDataOption: 'INSERT_ROWS',
+    resource: { values: [row] }
+  });
 }
 
 async function batchAppendRows(sheets, sheetName, rows, range = 'A:Z') {
