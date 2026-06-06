@@ -55,6 +55,18 @@ function parseTableRows(html) {
   return results;
 }
 
+// ── Match Artist helpers ──────────────────────────────────────────────────────────────
+
+const MAMAMOO_ARTISTS_LIST = [
+  'mamamoo','마마무','solar','솔라','moonbyul','문별',
+  'wheein','휘인','hwasa','화사','mamamoo+','마마무플러스'
+];
+
+function isMamamooRelated(artistStr) {
+  const n = (artistStr || '').toLowerCase();
+  return MAMAMOO_ARTISTS_LIST.some(a => n.includes(a));
+}
+
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 function getPHTHour() {
@@ -551,6 +563,13 @@ async function scrapeWorldwideSongChart(
       const match = findMatchInRegistry(trackName, registryData);
       if (!match) continue;
 
+      // Verify matched registry row belongs to a Mamamoo artist
+      const registryArtist = (match.row[1] || '').trim();
+      if (!isMamamooRelated(registryArtist)) {
+        console.log(`Skip WW: "${trackName}" matched non-Mamamoo registry row (${registryArtist})`);
+        continue;
+      }
+
       const appleUrl     = (match.row[16] || '').trim();
       const songHashtags = (match.row[17] || '').trim();
       const album        = (match.row[2]  || '').trim();
@@ -667,6 +686,13 @@ async function scrapeWorldwideAlbumChart(
         matchedRow = registryData[i];
         break;
       }
+    }
+
+    // Verify matched registry row belongs to a Mamamoo artist
+    const registryArtist = (match.row[1] || '').trim();
+    if (!isMamamooRelated(registryArtist)) {
+      console.log(`Skip WW: "${trackName}" matched non-Mamamoo registry row (${registryArtist})`);
+      continue;
     }
 
     if (!matchedRow) {
