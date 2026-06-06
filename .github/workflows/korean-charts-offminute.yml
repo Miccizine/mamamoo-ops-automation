@@ -25,4 +25,5 @@ jobs:
           GOOGLE_SHEETS_ID:            ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+          DISCORD_CHARTS_WEBHOOK:      ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
         run: node src/korean-charts.js
