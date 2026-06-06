@@ -314,10 +314,20 @@ async function main() {
 
     console.log(`Match: ${trackName} | #${track.pos} ${movementStr} | Day ${dayCount}`);
 
+    // Read prev position BEFORE upsert overwrites it
+    const prevPos = existing ? parseInt((existing.row[8] || '0').toString().replace(/,/g, ''), 10) : null;
+
     await upsertKoreaChartRow(
       sheets, chartMap, trackName, track.artist,
       track.pos, peak, track.days, isNew, isReentry, today
     );
+
+    // Only post to Discord if top 100 and rising
+    const isRising = isNew || isReentry || (prevPos !== null && track.pos < prevPos);
+    if (track.pos > 100 || !isRising) {
+      console.log(`Skip Discord: ${trackName} | #${track.pos} ${movementStr} | rising:${isRising}`);
+      continue;
+    }
 
     const post = buildKoreaChartPost(
       memberConfig, trackName, track.pos, movementStr,
