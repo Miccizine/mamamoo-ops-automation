@@ -24,6 +24,11 @@ module.exports = {
       return;
     }
 
+    if ((cfg['COMEBACK_HANTEO_TRACKER'] || '').toUpperCase() !== 'ON') {
+      await interaction.editReply({ content: '❌ Hanteo tracker is OFF. Enable COMEBACK_HANTEO_TRACKER in Config.' });
+      return;
+    }
+
     if (!cfg['COMEBACK_RELEASE_DATE']) {
       await interaction.editReply({ content: '❌ COMEBACK_RELEASE_DATE not set in Config.' });
       return;
