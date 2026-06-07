@@ -120,9 +120,12 @@ function buildPeakMap(peakData) {
 function getDayCount(entryDate, reentryDate) {
   const baseDate = reentryDate || entryDate;
   if (!baseDate) return 1;
-  const start = new Date(baseDate);
-  const now   = new Date();
-  const diff  = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  // Parse date portion only (YYYY-MM-DD) to avoid timezone shift on full timestamp
+  const dateOnly = baseDate.toString().slice(0, 10);
+  const todayKST = getKSTDateString(); // YYYY-MM-DD in KST
+  const start = new Date(dateOnly + 'T00:00:00Z');
+  const end   = new Date(todayKST + 'T00:00:00Z');
+  const diff  = Math.floor((end - start) / (1000 * 60 * 60 * 24));
   return Math.max(1, diff + 1);
 }
 
@@ -551,10 +554,15 @@ async function scrapeWorldwideSongChart(
       const artistTitle = cells[2] || cells[1] || '';
       if (position === 0 || !artistTitle) continue;
 
-      const parts     = artistTitle.split(' - ');
-      const trackName = parts.length > 1
-        ? parts.slice(1).join(' - ').trim()
-        : artistTitle.trim();
+      const parts       = artistTitle.split(' - ');
+      const chartArtist = parts.length > 1 ? parts[0].trim() : '';
+      const trackName   = parts.length > 1 ? parts.slice(1).join(' - ').trim() : artistTitle.trim();
+      
+      // Fast exit if chart artist is not Mamamoo-related
+      if (!isMamamooRelated(chartArtist)) {
+        console.log(`Skip WW: chart artist "${chartArtist}" not Mamamoo-related`);
+        continue;
+      }
 
       const wwKey = `${trackName}|${position}`;
       if (processedWorldwide.has(wwKey)) continue;
