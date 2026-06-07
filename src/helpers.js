@@ -4,16 +4,19 @@ const fetch = require('node-fetch');
 // ── PHT Timestamp ─────────────────────────────────────────────────────────────
 
 function getPHTTimestamp() {
-  return new Date().toLocaleString('en-CA', {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false
-  }).replace(',', '');
+  }).formatToParts(now);
+
+  const get = type => parts.find(p => p.type === type)?.value || '00';
+  let hour = get('hour');
+  if (hour === '24') hour = '00';
+
+  return `${get('year')}-${get('month')}-${get('day')} ${hour}:${get('minute')}:${get('second')}`;
 }
 
 // ── Google Sheets Auth ────────────────────────────────────────────────────────
