@@ -70,9 +70,11 @@ function isMamamooRelated(artistStr) {
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
 function getPHTHour() {
-  return parseInt(new Date().toLocaleString('en-US', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Manila', hour: 'numeric', hour12: false
-  }), 10);
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10);
+  return h === 24 ? 0 : h;
 }
 
 function getPHTDateHourKey() {
