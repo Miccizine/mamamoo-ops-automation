@@ -1,3 +1,5 @@
+'use strict';
+
 const {
   getSheetsClient,
   getSheetData,
@@ -56,27 +58,24 @@ async function searchItunesApi(trackName, artistName, retries = 2) {
 function scoreResult(result, registryTrack, registryArtist, registryAlbum, registryYear) {
   let score = 0;
 
-  const normalResult  = normalizeTitle(result.trackName || '');
-  const normalTrack   = normalizeTitle(registryTrack);
-  const normalArtist  = (result.artistName || '').toLowerCase();
-  const normalAlbum   = normalizeTitle(result.collectionName || '');
+  const normalResult   = normalizeTitle(result.trackName || '');
+  const normalTrack    = normalizeTitle(registryTrack);
+  const normalArtist   = (result.artistName || '').toLowerCase();
+  const normalAlbum    = normalizeTitle(result.collectionName || '');
   const normalRegAlbum = normalizeTitle(registryAlbum || '');
-  const resultYear    = result.releaseDate
+  const resultYear     = result.releaseDate
     ? new Date(result.releaseDate).getFullYear().toString()
     : '';
 
-  // Track name matching
   if (normalResult === normalTrack) {
     score += 3;
   } else if (normalResult.includes(normalTrack) || normalTrack.includes(normalResult)) {
     score += 1;
   }
 
-  // Artist matching — check if result artist contains any Mamamoo-related name
   const isMamamooArtist = MAMAMOO_ARTISTS.some(a => normalArtist.includes(a));
   if (isMamamooArtist) score += 2;
 
-  // Also check if registry artist matches result artist
   const registryArtistLower = (registryArtist || '').toLowerCase();
   const artistParts = registryArtistLower.split(';').map(a => a.trim());
   const resultArtistMatches = artistParts.some(part =>
@@ -84,10 +83,7 @@ function scoreResult(result, registryTrack, registryArtist, registryAlbum, regis
   );
   if (resultArtistMatches) score += 1;
 
-  // Album matching
   if (normalRegAlbum && normalAlbum === normalRegAlbum) score += 1;
-
-  // Release year matching
   if (registryYear && resultYear === registryYear) score += 1;
 
   return score;
@@ -103,49 +99,43 @@ async function main() {
   const reviewData   = await getSheetData(sheets, 'Apple Music Review');
   const sheetId      = process.env.GOOGLE_SHEETS_ID;
 
-  // Build set of tracks already in review sheet to avoid duplicates
   const alreadyReviewed = new Set();
   for (let i = 1; i < reviewData.length; i++) {
     if (reviewData[i][1]) alreadyReviewed.add(reviewData[i][1]);
   }
 
-  const reviewBuffer  = [];
+  const reviewBuffer   = [];
   const updateRequests = [];
   let filled  = 0;
   let flagged = 0;
   let skipped = 0;
 
   for (let i = 1; i < registryData.length; i++) {
-    const row          = registryData[i];
-    const trackName    = row[0] ? row[0].toString().trim() : '';
-    const artist       = row[1] ? row[1].toString().trim() : '';
-    const album        = row[2] ? row[2].toString().trim() : '';
-    const releaseDate  = row[3] ? row[3].toString().trim() : '';
-    const appleUrl     = row[16] ? row[16].toString().trim() : '';
+    const row         = registryData[i];
+    const trackName   = row[0] ? row[0].toString().trim() : '';
+    const artist      = row[1] ? row[1].toString().trim() : '';
+    const album       = row[2] ? row[2].toString().trim() : '';
+    const releaseDate = row[3] ? row[3].toString().trim() : '';
+    const appleUrl    = row[13] ? row[13].toString().trim() : ''; // col N (index 13)
 
     if (!trackName) continue;
 
-    // Skip if Apple Music URL already populated
     if (appleUrl) {
       skipped++;
       continue;
     }
 
-    const releaseYear = releaseDate
+    const releaseYear   = releaseDate
       ? new Date(releaseDate).getFullYear().toString()
       : '';
-
-    // Extract primary artist from semicolon-separated list
     const primaryArtist = artist.split(';')[0].trim();
-
-    const results = await searchItunesApi(trackName, primaryArtist);
+    const results       = await searchItunesApi(trackName, primaryArtist);
 
     if (results.length === 0) {
       console.log(`No results: ${trackName}`);
       continue;
     }
 
-    // Score all results
     const scored = results
       .map(r => ({
         result: r,
@@ -163,51 +153,37 @@ async function main() {
     const best = scored[0];
 
     if (best.score >= 4) {
-      // High confidence — write directly to registry column Q (index 16, row i+1)
-      updateRequests.push({
-        rowIndex: i + 1, // 1-based
-        url:      best.url
-      });
+      // Write to col N (index 13, sheet column N)
+      updateRequests.push({ rowIndex: i + 1, url: best.url });
       filled++;
       console.log(`✅ ${trackName} → ${best.url.substring(0, 60)}...`);
     } else if (best.score >= 2 && !alreadyReviewed.has(trackName)) {
-      // Low confidence — flag for manual review
       reviewBuffer.push([
-        getPHTTimestamp(),
-        trackName,
-        artist,
-        album,
-        best.url,
-        best.score,
-        'Pending'
+        getPHTTimestamp(), trackName, artist, album,
+        best.url, best.score, 'Pending'
       ]);
       flagged++;
       console.log(`⚠️  ${trackName} (score ${best.score}) → flagged for review`);
     }
 
-    // Polite delay to avoid rate limiting iTunes API
     await new Promise(r => setTimeout(r, 1500));
   }
 
-  // collect all high-confidence URLs first, then write them all in one batch instead of one write per row
   if (updateRequests.length > 0) {
-      console.log(`Writing ${updateRequests.length} Apple Music URLs to registry...`);
-    
-      const batchData = updateRequests.map(req => ({
-        range:  `Master Registry!Q${req.rowIndex}`,
-        values: [[req.url]]
-      }));
-    
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: sheetId,
-        resource: {
-          valueInputOption: 'USER_ENTERED',
-          data: batchData
-        }
-      });
-    }
+    console.log(`Writing ${updateRequests.length} Apple Music URLs to registry...`);
+    const batchData = updateRequests.map(req => ({
+      range:  `Master Registry!N${req.rowIndex}`, // col N
+      values: [[req.url]]
+    }));
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetId,
+      resource: {
+        valueInputOption: 'USER_ENTERED',
+        data: batchData
+      }
+    });
+  }
 
-  // Batch write flagged matches to review sheet
   if (reviewBuffer.length > 0) {
     console.log(`Writing ${reviewBuffer.length} flagged matches to Apple Music Review...`);
     await sheets.spreadsheets.values.append({
