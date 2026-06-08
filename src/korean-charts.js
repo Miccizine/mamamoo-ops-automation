@@ -8,11 +8,10 @@ const { getSheetsClient, getSheetData, getMemberConfig, getComebackMode } = requ
 
 const DISCORD_WEBHOOK = process.env.DISCORD_CHARTS_WEBHOOK;
 const SHEETS_ID       = process.env.GOOGLE_SHEETS_ID;
-const TRACKER_SHEET   = 'Korean Charts Tracker'; // rename Sheet 12 to this name
+const TRACKER_SHEET   = 'Korean Charts Tracker';
 const DELAY_MS        = 2000;
 const CHART_COLOR     = 16744272; // orange
 
-// guyso.me chart path slugs — null = not on guyso.me
 const GUYSOME_SLUG = {
   melon: { realtime: 'melon/top100',   daily: 'melon/daily',  weekly: 'melon/weekly' },
   genie: { realtime: 'genie/realtime', daily: 'genie/daily',  weekly: null },
@@ -23,10 +22,8 @@ const GUYSOME_SLUG = {
 
 const PLATFORM_LABEL = { melon:'MelOn', genie:'Genie', flo:'Flo', vibe:'Vibe', bugs:'Bugs' };
 
-// Sentinel rows in tracker — used to gate "already ran today/this-week/this-hour"
 const SENTINEL_DAILY  = '__SENTINEL__|daily|daily';
 const SENTINEL_WEEKLY = '__SENTINEL__|weekly|weekly';
-// Realtime sentinel key includes date+hour so it resets each hour
 function sentinelRealtimeKey(dateStr, hour) {
   return `__SENTINEL__|realtime|${dateStr}${String(hour).padStart(2,'0')}`;
 }
@@ -51,18 +48,31 @@ function toDateStr(d) {
   return `${d.getUTCFullYear()}${p(d.getUTCMonth()+1)}${p(d.getUTCDate())}`;
 }
 
-// YYYYMMDD → "YYYY-MM-DD" for startsWith comparison with KST timestamps
 function dateStrToISO(s) {
   return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
 }
 
 function getMostRecentMonday() {
   const kst = getKSTDate();
-  const day = kst.getUTCDay(); // 0=Sun
+  const day = kst.getUTCDay();
   const back = day === 0 ? 6 : day - 1;
   const m = new Date(kst);
   m.setUTCDate(kst.getUTCDate() - back);
   return m;
+}
+
+// ── ISO week number (matches guyso.me YYYY_WW format) ────────────────────────
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getMelonWeeklyKey(monday) {
+  const week = getISOWeek(monday);
+  return `${monday.getUTCFullYear()}_${String(week).padStart(2, '0')}`;
 }
 
 function weekRangeLabel(monday) {
@@ -85,11 +95,6 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─── guyso.me Scraper ────────────────────────────────────────────────────────
 
-/**
- * Confirmed __NEXT_DATA__ path: props.pageProps.data.data (array)
- * Confirmed entry shape: { ranking, previous, song: { name, artists: [{name}] } }
- * Movement computed from: previous - ranking (positive = moved up; null/0 = new entry)
- */
 async function scrapeGuysome(slug, dateStr, hour) {
   const h   = hour !== null ? `/${String(hour).padStart(2,'0')}` : '';
   const url = `https://guyso.me/chart/${slug}/${dateStr}${h}`;
@@ -113,19 +118,16 @@ async function scrapeGuysome(slug, dateStr, hour) {
 
   return entries.map(e => {
     const rank     = e.ranking ?? null;
-    const previous = e.previous ?? null; // previous rank number, null = new entry
+    const previous = e.previous ?? null;
     const title    = (e.song?.name ?? '').trim();
     const artist   = (e.song?.artists?.[0]?.name ?? '').trim();
 
-    // Compute movement from previous rank
-    // previous === null → new entry
-    // previous === 0 → also treat as new (some platforms use 0 for new)
     let htmlMovement = null;
     let isNew        = false;
     if (previous === null || previous === 0) {
       isNew = true;
     } else {
-      htmlMovement = previous - rank; // positive = moved up
+      htmlMovement = previous - rank;
     }
 
     return { rank, title, artist, htmlMovement, isNew, isReNew: false };
@@ -151,7 +153,7 @@ async function scrapeGenieWeekly() {
     let htmlMovement = null;
     const $mv = $(row).find('[class*="rank-"]').first();
     const cls = $mv.attr('class') || '';
-    if (cls.includes('rank-up'))   htmlMovement = parseInt($mv.text().replace(/[^0-9]/g,''), 10) || null;
+    if (cls.includes('rank-up'))        htmlMovement = parseInt($mv.text().replace(/[^0-9]/g,''), 10) || null;
     else if (cls.includes('rank-down')) htmlMovement = -(parseInt($mv.text().replace(/[^0-9]/g,''), 10) || 0);
     else if (cls.includes('rank-none')) htmlMovement = 0;
 
@@ -182,8 +184,8 @@ async function scrapeBugsWeekly() {
     const val  = parseInt($ch.find('em').text(), 10) || 0;
 
     let htmlMovement = null;
-    if      (cls.includes('up'))                          htmlMovement = val;
-    else if (cls.includes('down'))                        htmlMovement = -val;
+    if      (cls.includes('up'))                               htmlMovement = val;
+    else if (cls.includes('down'))                             htmlMovement = -val;
     else if (cls.includes('none') || cls.includes('duration')) htmlMovement = 0;
 
     const isNew   = cls.includes('new') && !cls.includes('renew');
@@ -197,11 +199,6 @@ async function scrapeBugsWeekly() {
 
 // ─── Tracker Sheet ───────────────────────────────────────────────────────────
 
-/**
- * Columns A–J (0-indexed):
- * 0 Track Name | 1 Platform | 2 Chart Type | 3 Current Position | 4 Movement
- * 5 Peak Position | 6 Peak Date | 7 Entry Date | 8 Last Seen | 9 Re-entry Date
- */
 async function ensureTrackerSheet(sheets) {
   const meta   = await sheets.spreadsheets.get({ spreadsheetId: SHEETS_ID });
   const exists = meta.data.sheets.some(s => s.properties.title === TRACKER_SHEET);
@@ -229,17 +226,17 @@ async function loadTracker(sheets) {
     if (!r[0]) continue;
     const key = `${r[0]}|${r[1]}|${r[2]}`;
     map.set(key, {
-      rowIndex:   i + 1,
-      trackName:  r[0] || '',
-      platform:   r[1] || '',
-      chartType:  r[2] || '',
-      currentPos: parseInt((r[3]||'').toString().replace(/,/g,''), 10) || null,
-      movement:   r[4] || '',
-      peakPos:    parseInt((r[5]||'').toString().replace(/,/g,''), 10) || null,
-      peakDate:   r[6] || '',
-      entryDate:  r[7] || '',
-      lastSeen:   r[8] || '',
-      reentryDate:r[9] || '',
+      rowIndex:    i + 1,
+      trackName:   r[0] || '',
+      platform:    r[1] || '',
+      chartType:   r[2] || '',
+      currentPos:  parseInt((r[3]||'').toString().replace(/,/g,''), 10) || null,
+      movement:    r[4] || '',
+      peakPos:     parseInt((r[5]||'').toString().replace(/,/g,''), 10) || null,
+      peakDate:    r[6] || '',
+      entryDate:   r[7] || '',
+      lastSeen:    r[8] || '',
+      reentryDate: r[9] || '',
     });
   }
   return map;
@@ -292,10 +289,10 @@ function sentinelAlreadyRan(trackerMap, key, dateStr, hour) {
 function setSentinel(trackerMap, dirtyKeys, key) {
   const ex = trackerMap.get(key);
   trackerMap.set(key, {
-    rowIndex: ex ? ex.rowIndex : null,
-    trackName: '__SENTINEL__',
-    platform:  key.split('|')[1],
-    chartType: key.split('|')[2],
+    rowIndex:   ex ? ex.rowIndex : null,
+    trackName:  '__SENTINEL__',
+    platform:   key.split('|')[1],
+    chartType:  key.split('|')[2],
     currentPos: 0, movement: '',
     peakPos: 0, peakDate: '',
     entryDate: '', lastSeen: getKSTTimestamp(), reentryDate: '',
@@ -321,30 +318,21 @@ function isMamamooArtist(s) {
   return MAMAMOO_ARTISTS.some(a => n.includes(a));
 }
 
-/**
- * Match chart entry against registry with two-layer artist verification:
- * 1. Registry row must belong to a Mamamoo artist (col B)
- * 2. Chart artist must also be a Mamamoo artist
- * This prevents e.g. KiiiKiii's "I DO ME" matching HWASA's registry row.
- */
 function findInRegistry(chartTitle, chartArtist, registryData) {
   const nc = norm(chartTitle);
   const na = norm(chartArtist);
 
-  // Chart artist must be Mamamoo-related — fast exit if not
   if (!isMamamooArtist(na)) return null;
 
   for (const row of registryData) {
     if (!row[0]) continue;
-    if ((row[11] || '').toLowerCase() === 'no') continue; // Effective Tracking = No
+    if ((row[11] || '').toLowerCase() === 'no') continue;
 
     const nr       = norm(row[0]);
     const nrArtist = norm(row[1] || '');
 
-    // Registry row must be a Mamamoo artist
     if (!isMamamooArtist(nrArtist)) continue;
 
-    // Exact match always valid; partial only if both titles >= 5 chars
     const titleMatch = nr === nc ||
       (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
@@ -352,7 +340,7 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     return {
       memberConfig: getMemberConfig(row),
       trackName:    row[0],
-      songHashtags: (row[17] || '').trim(),
+      songHashtags: (row[18] || '').trim(), // col S index 18
     };
   }
   return null;
@@ -364,14 +352,12 @@ function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
   if (isReNew) return '(Re-entry)';
   if (isNew || prevPos === null) return '(NEW)';
 
-  // HTML movement from direct scrapers (Genie/Bugs) takes priority
   if (htmlMovement !== null) {
     if (htmlMovement === 0)  return '(=)';
     if (htmlMovement > 0)   return `(+${htmlMovement})`;
     return `(${htmlMovement})`;
   }
 
-  // Tracker delta for guyso.me sources
   const delta = prevPos - rank;
   if (delta === 0) return '(=)';
   if (delta > 0)   return `(+${delta})`;
@@ -385,7 +371,6 @@ function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, ran
   const ex  = trackerMap.get(key);
   const isNewPeak = ex != null && ex.peakPos !== null && rank < ex.peakPos;
 
-  // Re-entry: previously seen, then gap > 25h, now charting again
   let reentryDate = ex ? ex.reentryDate : '';
   if (ex && ex.lastSeen) {
     const lastMs = new Date(ex.lastSeen.replace(' KST','') + '+09:00').getTime();
@@ -395,14 +380,14 @@ function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, ran
   }
 
   trackerMap.set(key, {
-    rowIndex:   ex ? ex.rowIndex : null,
+    rowIndex:    ex ? ex.rowIndex : null,
     trackName, platform, chartType,
-    currentPos: rank,
-    movement:   movementStr,
-    peakPos:    isNewPeak ? rank : (ex ? ex.peakPos : rank),
-    peakDate:   isNewPeak ? dateStr : (ex ? ex.peakDate : dateStr),
-    entryDate:  ex ? ex.entryDate : dateStr,
-    lastSeen:   getKSTTimestamp(),
+    currentPos:  rank,
+    movement:    movementStr,
+    peakPos:     isNewPeak ? rank : (ex ? ex.peakPos : rank),
+    peakDate:    isNewPeak ? dateStr : (ex ? ex.peakDate : dateStr),
+    entryDate:   ex ? ex.entryDate : dateStr,
+    lastSeen:    getKSTTimestamp(),
     reentryDate,
   });
   dirtyKeys.add(key);
@@ -413,19 +398,18 @@ function upsertRecord(trackerMap, dirtyKeys, trackName, platform, chartType, ran
 // ─── Process Results ──────────────────────────────────────────────────────────
 
 function processResults(chartResults, chartType, dateStr, registryData, trackerMap, dirtyKeys, cfg) {
-  const trackMap = new Map();
+  const trackMap      = new Map();
   const comebackTrack = (cfg?.COMEBACK_TRACK || '').toLowerCase().trim();
   const comebackMode  = cfg?.COMEBACK_MODE === 'ON';
 
   for (const [platform, entries] of chartResults) {
     for (const entry of entries) {
-      // Skip rank > 50 for realtime
       if (chartType === 'realtime' && entry.rank > 50) continue;
 
       const match = findInRegistry(entry.title, entry.artist, registryData);
       if (!match) continue;
 
-      // Skip if not current comeback track (realtime only)
+      // Realtime comeback mode: only post comeback track
       if (chartType === 'realtime' && comebackMode && comebackTrack) {
         const entryNorm = norm(entry.title);
         if (!entryNorm.includes(norm(comebackTrack)) && !norm(comebackTrack).includes(entryNorm)) continue;
@@ -445,46 +429,51 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
       const key = `${match.trackName}|${platform}|${chartType}`;
       trackerMap.get(key).movement = movementStr;
 
+      const isComeback = comebackMode && comebackTrack &&
+        (norm(match.trackName).includes(norm(comebackTrack)) ||
+         norm(comebackTrack).includes(norm(match.trackName)));
+
+      // isRising: for comeback track in realtime, always true
+      const isRising = (chartType === 'realtime' && isComeback)
+        ? true
+        : entry.isNew || entry.isReNew ||
+          (entry.htmlMovement !== null
+            ? entry.htmlMovement > 0
+            : (prevPos !== null && entry.rank < prevPos));
+
       if (!trackMap.has(match.trackName)) {
         trackMap.set(match.trackName, { match, entries: [] });
       }
       trackMap.get(match.trackName).entries.push({
-        platform, rank: entry.rank, movementStr, isNewPeak,
-        isRising: entry.isNew || entry.isReNew || (entry.htmlMovement !== null ? entry.htmlMovement > 0 : (prevPos !== null && entry.rank < prevPos)),
+        platform, rank: entry.rank, movementStr, isNewPeak, isRising,
       });
     }
   }
 
-  // For realtime: filter tracks not on all 4 platforms, and filter out non-rising entries
+  // Realtime: all 4 platforms required, at least one rising
   if (chartType === 'realtime') {
     const required = ['melon', 'genie', 'flo', 'bugs'];
     for (const [trackName, data] of trackMap.entries()) {
       const platforms = new Set(data.entries.map(e => e.platform));
-      const allPresent = required.every(p => platforms.has(p));
-      if (!allPresent) { trackMap.delete(trackName); continue; }
-
-      // Keep only if at least one platform is rising
-      const anyRising = data.entries.some(e => e.isRising);
-      if (!anyRising) { trackMap.delete(trackName); }
+      if (!required.every(p => platforms.has(p))) { trackMap.delete(trackName); continue; }
+      if (!data.entries.some(e => e.isRising))    { trackMap.delete(trackName); }
     }
   }
 
-  // For daily: non-comeback tracks must appear on all 4 platforms
+  // Daily: non-comeback tracks must appear on all 4 platforms
   if (chartType === 'daily') {
     const required = ['melon', 'genie', 'vibe', 'bugs'];
     for (const [trackName, data] of trackMap.entries()) {
       const isComeback = comebackMode && comebackTrack &&
         (norm(trackName).includes(norm(comebackTrack)) || norm(comebackTrack).includes(norm(trackName)));
-      if (isComeback) continue; // comeback track always posts
+      if (isComeback) continue;
       const platforms = new Set(data.entries.map(e => e.platform));
-      const allPresent = required.every(p => platforms.has(p));
-      if (!allPresent) trackMap.delete(trackName);
+      if (!required.every(p => platforms.has(p))) trackMap.delete(trackName);
     }
   }
 
   return trackMap;
 }
-
 
 // ─── Discord ──────────────────────────────────────────────────────────────────
 
@@ -505,7 +494,7 @@ async function sendToDiscord(payload) {
 
 async function sendChartDraft(match, label, entries) {
   const { memberConfig, trackName, songHashtags } = match;
-  const header = `${memberConfig.handle}'s '${trackName}' —  ${label}`;
+  const header = `${memberConfig.handle}'s '${trackName}' — ${label}`;
 
   let chartLines = entries.map(e => {
     let line = `#${e.rank} ${PLATFORM_LABEL[e.platform]} ${e.movementStr}`;
@@ -529,7 +518,6 @@ async function sendChartDraft(match, label, entries) {
   };
 
   let body = buildBody(chartLines);
-  // Trim to 280 chars by dropping lowest-ranked lines
   while (body.length > 280 && chartLines.length > 1) {
     chartLines = chartLines.slice(0, -1);
     body = buildBody(chartLines);
@@ -554,7 +542,7 @@ function buildLabel(chartType) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  await delay(Math.floor(Math.random() * 30000)); // startup jitter
+  await delay(Math.floor(Math.random() * 30000));
 
   const sheets     = await getSheetsClient();
   const isComeback = await getComebackMode(sheets);
@@ -578,37 +566,43 @@ async function main() {
     getSheetData(sheets, 'Master Registry'),
     loadTracker(sheets),
   ]);
-  const dirtyKeys = new Set();
+  const dirtyKeys  = new Set();
   const configData = await getSheetData(sheets, 'Config');
   const cfg = {};
   for (const row of configData) cfg[row[0]] = row[1] || '';
 
- // ── REALTIME ──────────────────────────────────────────────────────────────
-if (runRealtime) {
-  console.log('Realtime...');
-  const results = new Map();
-  for (const p of ['melon','genie','flo','bugs']) {
-    const slug = GUYSOME_SLUG[p].realtime;
-    if (!slug) continue;
-    try {
-      await delay(DELAY_MS);
-      const data = await scrapeGuysome(slug, dateStr, kstHour);
-      if (data.length) results.set(p, data);
-      console.log(`  ${p}: ${data.length}`);
-    } catch (e) { console.error(`  ${p}:`, e.message); }
-  }
-  if (results.size) {
-    const tmRealtime = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
-    const lb = buildLabel('realtime');
-    for (const { match, entries } of tmRealtime.values()) {
-      entries.sort((a,b) => a.rank - b.rank);
-      await sendChartDraft(match, lb, entries);
-      await delay(DELAY_MS);
+  // ── REALTIME ──────────────────────────────────────────────────────────────
+  if (runRealtime) {
+    const sentinelKey = sentinelRealtimeKey(dateStr, kstHour);
+    if (sentinelAlreadyRan(trackerMap, sentinelKey, dateStr, kstHour)) {
+      console.log('Realtime already ran this hour. Skipping.');
+    } else {
+      console.log('Realtime...');
+      const results = new Map();
+      for (const p of ['melon','genie','flo','bugs']) {
+        const slug = GUYSOME_SLUG[p].realtime;
+        if (!slug) continue;
+        try {
+          await delay(DELAY_MS);
+          const data = await scrapeGuysome(slug, dateStr, kstHour);
+          if (data.length) results.set(p, data);
+          console.log(`  ${p}: ${data.length}`);
+        } catch (e) { console.error(`  ${p}:`, e.message); }
+      }
+      if (results.size) {
+        const tmRealtime = processResults(results, 'realtime', dateStr, registryData, trackerMap, dirtyKeys, cfg);
+        const lb = buildLabel('realtime');
+        for (const { match, entries } of tmRealtime.values()) {
+          entries.sort((a,b) => a.rank - b.rank);
+          await sendChartDraft(match, lb, entries);
+          await delay(DELAY_MS);
+        }
+        setSentinel(trackerMap, dirtyKeys, sentinelKey);
+      } else {
+        console.log('Realtime returned no data.');
+      }
     }
-  } else {
-    console.log('Realtime returned no data.');
   }
-}
 
   // ── DAILY ─────────────────────────────────────────────────────────────────
   if (runDaily) {
@@ -653,11 +647,13 @@ if (runRealtime) {
       console.log('Weekly already ran this Monday. Skipping.');
     } else {
       console.log('Weekly...');
-      const results = new Map();
+      const results   = new Map();
+      const monday    = getMostRecentMonday();
+      const melonKey  = getMelonWeeklyKey(monday); // YYYY_WW format
 
       try {
         await delay(DELAY_MS);
-        const data = await scrapeGuysome('melon/weekly', mondayStr, null);
+        const data = await scrapeGuysome('melon/weekly', melonKey, null);
         if (data.length) results.set('melon', data);
         console.log(`  melon: ${data.length}`);
       } catch (e) { console.error('  melon weekly:', e.message); }
