@@ -39,20 +39,18 @@ function findMatchInRegistryVerified(chartTitle, chartArtist, registryData) {
   const nc = normStr(chartTitle);
   const na = normStr(chartArtist);
 
-  // Chart artist must be Mamamoo-related — fast exit if not
   if (!na || !isMamamooArtist(na)) return null;
 
   for (const row of registryData) {
     if (!row[0]) continue;
     if ((row[11] || '').toLowerCase() === 'no') continue;
 
-    const nr       = normStr(row[0]);
-    if (!nr) continue; // skip empty normalized titles (e.g. pure CJK)
+    const nr = normStr(row[0]);
+    if (!nr) continue;
 
     const nrArtist = normStr(row[1] || '');
     if (!isMamamooArtist(nrArtist)) continue;
 
-    // Exact match, or partial only if both titles >= 5 chars
     const titleMatch = nr === nc ||
       (nc.length >= 5 && nr.length >= 5 && (nr.includes(nc) || nc.includes(nr)));
     if (!titleMatch) continue;
@@ -111,9 +109,9 @@ function parseKoreaChart(html) {
     const pos = parseInt(cells[0], 10);
     if (isNaN(pos)) continue;
 
-    const movement    = (cells[1] || '').trim(); // numeric, "RE", "NEW", "="
+    const movement    = (cells[1] || '').trim();
     const artistTitle = cells[2] || '';
-    const days        = parseInt(cells[3], 10) || 1; // kworb Days column
+    const days        = parseInt(cells[3], 10) || 1;
     const peak        = parseInt(cells[4], 10) || pos;
     const streams     = parseInt((cells[5] || '').replace(/,/g, ''), 10) || 0;
 
@@ -175,9 +173,7 @@ async function upsertKoreaChartRow(sheets, chartMap, trackName, artist, pos, pea
   const reentryDate = isReentry ? today : (row[6] || '');
   const newPeak     = Math.min(currentPeak, peak);
   const peakDate    = newPeak < currentPeak ? today : (row[3] || today);
-
-  // Use kworb days as source of truth — reliable even after sheet clears
-  const dayCount = isReentry ? 1 : days;
+  const dayCount    = isReentry ? 1 : days;
 
   const updatedRow = [
     trackName, artist, newPeak, peakDate,
@@ -213,9 +209,9 @@ function buildKoreaChartPost(config, trackName, pos, movementStr, dayCount, peak
 
   lines.push('');
 
-  if (spotifyUrl)   {
+  if (spotifyUrl) {
     lines.push(`🔗 ${spotifyUrl}`);
-    lines.push(''); // extra next line
+    lines.push('');
   }
   if (songHashtags) lines.push(songHashtags);
   if (config.tags)  lines.push(config.tags);
@@ -292,29 +288,23 @@ async function main() {
     if (activeTracking !== 'yes') continue;
 
     const memberConfig = getMemberConfig(matchedRow);
-    const songHashtags = (matchedRow[17] || '').trim();
-    const spotifyUri   = (matchedRow[12] || '').trim();
+    const songHashtags = (matchedRow[18] || '').trim(); // col S index 18
+    const spotifyUri   = (matchedRow[12] || '').trim(); // col M index 12
     const spotifyUrl   = spotifyUri
       ? 'https://open.spotify.com/track/' + spotifyUri.replace('spotify:track:', '')
       : '';
 
-    // Use kworb data as source of truth for entry state
     const isNew     = track.days === 1 && track.movement !== 'RE';
     const isReentry = track.movement === 'RE';
-
     const movementStr = formatMovement(track.movement, isNew, isReentry);
+    const dayCount    = isReentry ? 1 : track.days;
 
-    // Day count from kworb is authoritative — survives sheet clears
-    const dayCount = isReentry ? 1 : track.days;
-
-    // Peak: best of kworb peak and sheet peak
-    const existing    = chartMap[trackName];
-    const sheetPeak   = existing ? parseInt((existing.row[2] || '999').toString().replace(/,/g, ''), 10) : 999;
-    const peak        = Math.min(track.peak, sheetPeak);
+    const existing  = chartMap[trackName];
+    const sheetPeak = existing ? parseInt((existing.row[2] || '999').toString().replace(/,/g, ''), 10) : 999;
+    const peak      = Math.min(track.peak, sheetPeak);
 
     console.log(`Match: ${trackName} | #${track.pos} ${movementStr} | Day ${dayCount}`);
 
-    // Read prev position BEFORE upsert overwrites it
     const prevPos = existing ? parseInt((existing.row[8] || '0').toString().replace(/,/g, ''), 10) : null;
 
     await upsertKoreaChartRow(
@@ -322,7 +312,6 @@ async function main() {
       track.pos, peak, track.days, isNew, isReentry, today
     );
 
-    // Only post to Discord if top 100 and rising
     const isRising = isNew || isReentry || (prevPos !== null && track.pos < prevPos);
     if (track.pos > 100 || !isRising) {
       console.log(`Skip Discord: ${trackName} | #${track.pos} ${movementStr} | rising:${isRising}`);
