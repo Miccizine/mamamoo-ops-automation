@@ -36,8 +36,8 @@ function parseKworbTable(html) {
   const rows   = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
 
   for (const row of rows) {
-    const cells        = [];
-    const cellPattern  = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    const cells       = [];
+    const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     let cellMatch;
     while ((cellMatch = cellPattern.exec(row)) !== null) {
       cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim());
@@ -125,7 +125,6 @@ function getDailyHistory(rawScrapeLog, trackName, platform) {
     }
   }
 
-  // Deduplicate to one entry per calendar day PHT, keeping last entry
   const byDay = {};
   for (const e of entries) {
     const day = new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -141,10 +140,10 @@ function getDailyHistory(rawScrapeLog, trackName, platform) {
 
 function formatGoalLine(currentStreams, goalStr, label) {
   if (!goalStr) return null;
-  const goal      = parseInt(goalStr.replace(/,/g, ''), 10);
+  const goal    = parseInt(goalStr.replace(/,/g, ''), 10);
   if (isNaN(goal) || goal === 0) return null;
-  const reached   = currentStreams >= goal;
-  const emoji     = reached ? '✅' : '🏁';
+  const reached = currentStreams >= goal;
+  const emoji   = reached ? '✅' : '🏁';
   const formatted = formatMilestoneNumber(goal);
   return `${emoji}${label} : ${formatted}`;
 }
@@ -158,7 +157,7 @@ function buildDailyTrackPost(config, trackName, history, spotifyUrl, songHashtag
 
   const dayLines = history.map((entry, i) => {
     if (i === 0) return { base: `D${entry.day} - ${entry.streams.toLocaleString()}`, delta: '' };
-    const delta    = entry.streams - history[i - 1].streams;
+    const delta     = entry.streams - history[i - 1].streams;
     const prevDelta = i >= 2 ? history[i - 1].streams - history[i - 2].streams : null;
     let emoji = '';
     if (prevDelta !== null) emoji = delta > prevDelta ? ' 🔥' : ' ⚠️';
@@ -200,7 +199,7 @@ function buildDailyAlbumPost(config, albumName, albumType, history, albumSpotify
 
   const dayLines = history.map((entry, i) => {
     if (i === 0) return { base: `D${entry.day} — ${entry.streams.toLocaleString()}`, delta: '' };
-    const delta    = entry.streams - history[i - 1].streams;
+    const delta     = entry.streams - history[i - 1].streams;
     const prevDelta = i >= 2 ? history[i - 1].streams - history[i - 2].streams : null;
     let emoji = '';
     if (prevDelta !== null) emoji = delta > prevDelta ? ' 🔥' : ' ⚠️';
@@ -279,7 +278,6 @@ function buildWeeklyPost(config, trackOrAlbumName, isAlbum, albumType, weeklyTot
 function computeWeeklyTotals(history, currentWeek) {
   const result = [];
   for (let w = 1; w <= currentWeek; w++) {
-    // Last entry of each week
     const weekEntries = history.filter(e => Math.ceil(e.day / 7) === w);
     if (weekEntries.length === 0) continue;
     const last = weekEntries[weekEntries.length - 1];
@@ -316,9 +314,9 @@ async function sendComebackPost(post, title) {
   await sendToWebhook(process.env.DISCORD_MILESTONE_WEBHOOK, {
     embeds: [{
       title,
-      color:  1947988,
+      color:       1947988,
       description: post,
-      footer: { text: '✅ Approve and post manually to X | ❌ Discard' }
+      footer:      { text: '✅ Approve and post manually to X | ❌ Discard' }
     }]
   });
 }
@@ -375,19 +373,19 @@ async function main() {
   const processedTracks    = new Set();
 
   // ── Comeback config ───────────────────────────────────────────────────────
-  let cfg             = {};
-  let comebackTrack   = '';
-  let comebackAlbum   = '';
-  let releaseDate     = '';
-  let isAlbum         = false;
-  let albumKworbUrl   = '';
-  let albumSpotifyUrl = '';
-  let trackSpotifyUrl = '';
+  let cfg              = {};
+  let comebackTrack    = '';
+  let comebackAlbum    = '';
+  let releaseDate      = '';
+  let isAlbum          = false;
+  let albumKworbUrl    = '';
+  let albumSpotifyUrl  = '';
+  let trackSpotifyUrl  = '';
   let albumSpotifyGoal = '';
   let trackSpotifyGoal = '';
-  let dayNumber       = null;
-  let weekNumber      = null;
-  let albumType       = '';
+  let dayNumber        = null;
+  let weekNumber       = null;
+  let albumType        = '';
 
   if (isComeback) {
     cfg              = await getComebackConfig(sheets);
@@ -402,12 +400,12 @@ async function main() {
     trackSpotifyGoal = cfg['COMEBACK_SPOTIFY_GOAL']       || '';
     dayNumber        = getDayNumber(releaseDate);
     weekNumber       = getWeekNumber(releaseDate);
-    albumType        = cfg['COMEBACK_ALBUM_TYPE']         || 'Album'; // e.g. "2nd Mini Album"
+    albumType        = cfg['COMEBACK_ALBUM_TYPE']         || 'Album';
     console.log(`Comeback: "${comebackTrack}" | Day ${dayNumber} | Week ${weekNumber}`);
   }
 
   // ── Scrape all artist pages ───────────────────────────────────────────────
-  const scrapedStreams = {}; // trackName -> streams
+  const scrapedStreams = {};
 
   for (const artist of ARTIST_PAGES) {
     console.log(`Scraping: ${artist.label}`);
@@ -456,8 +454,8 @@ async function main() {
       ]);
 
       // ── Normal milestone check (all modes) ─────────────────────────────
-      const interval       = 10000000;
-      const lastMilestone  = Math.floor(track.streams / interval) * interval;
+      const interval      = 10000000;
+      const lastMilestone = Math.floor(track.streams / interval) * interval;
       if (lastMilestone > 0) {
         if (!isMilestoneLogged(existingMilestones, trackName, 'Spotify', lastMilestone, 'Streams')) {
           cacheMilestone(existingMilestones, trackName, album, 'Spotify', lastMilestone, 'Streams', spotifyUrl);
@@ -465,7 +463,7 @@ async function main() {
           milestones.push({
             trackName, album, platform: 'Spotify', milestone: lastMilestone,
             countType: 'Streams', sourceUrl: spotifyUrl, memberConfig,
-            songHashtags: (matchedRow[17] || '').trim()
+            songHashtags: (matchedRow[18] || '').trim()   // Col S(18)
           });
         }
       }
@@ -476,7 +474,7 @@ async function main() {
 
   // ── Comeback: album kworb page ────────────────────────────────────────────
   let albumTotalStreams = 0;
-  const albumTrackStreams = {}; // trackName -> streams for album tracks
+  const albumTrackStreams = {};
 
   if (isComeback && isAlbum && albumKworbUrl) {
     console.log(`Scraping album kworb page: ${albumKworbUrl}`);
@@ -488,9 +486,9 @@ async function main() {
         const match = findMatchInRegistry(track.title, registryData);
         if (!match) continue;
 
-        const matchedRow  = match.row;
-        const trackName   = matchedRow[0];
-        const albumName   = matchedRow[2];
+        const matchedRow     = match.row;
+        const trackName      = matchedRow[0];
+        const albumName      = matchedRow[2];
         const activeTracking = (matchedRow[11] || '').toString().trim().toLowerCase();
         if (activeTracking !== 'yes') continue;
         if (albumName !== comebackAlbum) continue;
@@ -498,7 +496,6 @@ async function main() {
         albumTrackStreams[trackName] = track.streams;
         albumTotalStreams += track.streams;
 
-        // Log album tracks to Raw Scrape Log if not already logged from artist pages
         if (!processedTracks.has(`${trackName}|Spotify`)) {
           rawLogBuffer.push([
             getPHTTimestamp(), trackName, albumName, 'Spotify', 'Streams',
@@ -508,7 +505,6 @@ async function main() {
         }
       }
 
-      // Log album total
       rawLogBuffer.push([
         getPHTTimestamp(), comebackAlbum, comebackAlbum, 'Spotify', 'Album Streams',
         albumTotalStreams, '', albumKworbUrl
@@ -528,7 +524,6 @@ async function main() {
     const isDaily  = dayNumber <= 14;
     const isWeekly = !isDaily && weekNumber >= 2 && weekNumber <= 4 && isWeekBoundary(releaseDate);
 
-    // Find comeback track registry row
     let comebackTrackRow = null;
     for (let i = 1; i < registryData.length; i++) {
       if ((registryData[i][0] || '').trim() === comebackTrack) {
@@ -539,8 +534,8 @@ async function main() {
 
     if (comebackTrackRow) {
       const memberConfig  = getMemberConfig(comebackTrackRow);
-      const songHashtags  = (comebackTrackRow[17] || '').trim();
-      const albumHashtags = (comebackTrackRow[18] || '').trim();
+      const songHashtags  = (comebackTrackRow[18] || '').trim();   // Col S(18)
+      const albumHashtags = (comebackTrackRow[19] || '').trim();   // Col T(19)
 
       const trackSpotifyUri = comebackTrackRow[12];
       const resolvedTrackUrl = trackSpotifyUri
@@ -551,8 +546,7 @@ async function main() {
       if (isDaily) {
         const trackHistory = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
 
-        // Add today's scraped value if available and not already in log
-        const todayStr = getPHTDateString();
+        const todayStr     = getPHTDateString();
         const alreadyToday = trackHistory.some(e =>
           new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === todayStr
         );
@@ -591,8 +585,8 @@ async function main() {
 
       // ── Weekly track post ─────────────────────────────────────────────
       if (isWeekly) {
-        const trackHistory  = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
-        const weeklyTotals  = computeWeeklyTotals(trackHistory, weekNumber);
+        const trackHistory = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
+        const weeklyTotals = computeWeeklyTotals(trackHistory, weekNumber);
 
         if (weeklyTotals.length > 0) {
           const closingTags = buildClosingTags(memberConfig);
