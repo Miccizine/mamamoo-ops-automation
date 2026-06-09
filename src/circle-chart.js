@@ -203,7 +203,7 @@ async function ensureSheet(sheets) {
 // ── Discord ───────────────────────────────────────────────────────────────────
 
 async function sendEmbed(embed) {
-  const res = await fetch(process.env.DISCORD_MILESTONE_WEBHOOK, {
+  const res = await fetch(process.env.DISCORD_CHARTS_WEBHOOK, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ embeds: [embed] }),
@@ -237,7 +237,7 @@ async function postChartEntry(hit, isReentry) {
   ].filter(Boolean).join('\n');
 
   await sendEmbed({
-    title: `[CIRCLE CHART] ${hit.chartName}`,
+    title: `[PHYSICAL] Circle Chart — ${hit.chartName}`,
     color: 3066993,
     description,
     footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
