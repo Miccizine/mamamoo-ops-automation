@@ -1,26 +1,8 @@
 'use strict';
 const fetch = require('node-fetch');
 
-const BASE_URL = 'https://circlechart.kr';
-
-// ── Test artist (likely charting right now) ───────────────────────────────────
+const BASE_URL   = 'https://circlechart.kr';
 const TEST_ARTIST = 'aespa';
-
-// ── Week params (ISO week) ────────────────────────────────────────────────────
-
-function getCurrentWeekParams() {
-  const now    = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-  const year   = now.getFullYear();
-  // ISO week: Thursday-based
-  const thu    = new Date(now);
-  thu.setDate(now.getDate() + (4 - (now.getDay() || 7)));
-  const yearStart = new Date(thu.getFullYear(), 0, 1);
-  const weekNum   = Math.ceil(((thu - yearStart) / 86400000 + 1) / 7);
-  const targetTime = String(weekNum).padStart(2, '0');
-  return { hitYear: String(year), targetTime, yearTime: '3' };
-}
-
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async function fetchOnoffChart(serviceGbn, params) {
   const body = new URLSearchParams({
@@ -67,68 +49,43 @@ async function fetchAlbumChart(params) {
   return (await res.json()).List || [];
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-
-async function main() {
-  const params = getCurrentWeekParams();
-  console.log(`Week params: ${JSON.stringify(params)}\n`);
-
-  // ── 1. Digital chart — first 3 entries raw ────────────────────────────────
-  console.log('=== DIGITAL CHART (ALL) — first 3 entries raw ===');
-  try {
-    const list = await fetchOnoffChart('ALL', params);
-    console.log(`Total entries: ${list.length}`);
-    for (const entry of list.slice(0, 3)) {
-      console.log(JSON.stringify(entry, null, 2));
-    }
-
-    // Search for test artist
-    const found = list.filter(e => (e.ARTIST_NAME || '').toLowerCase().includes(TEST_ARTIST.toLowerCase()));
-    console.log(`\n--- "${TEST_ARTIST}" entries (Digital) ---`);
-    if (found.length) {
-      for (const e of found) console.log(JSON.stringify(e, null, 2));
-    } else {
-      console.log(`Not found on Digital chart this week.`);
-    }
-  } catch (e) {
-    console.error(`Digital chart error: ${e.message}`);
-  }
-
-  await new Promise(r => setTimeout(r, 1500));
-
-  // ── 2. Album chart — first 3 entries raw ─────────────────────────────────
-  console.log('\n=== ALBUM CHART — first 3 entries raw ===');
-  try {
-    const list = await fetchAlbumChart(params);
-    console.log(`Total entries: ${list.length}`);
-    for (const entry of list.slice(0, 3)) {
-      console.log(JSON.stringify(entry, null, 2));
-    }
-
-    // Search for test artist
-    const found = list.filter(e => (e.ARTIST_NAME || '').toLowerCase().includes(TEST_ARTIST.toLowerCase()));
-    console.log(`\n--- "${TEST_ARTIST}" entries (Album) ---`);
-    if (found.length) {
-      for (const e of found) console.log(JSON.stringify(e, null, 2));
-    } else {
-      console.log(`Not found on Album chart this week.`);
-    }
-  } catch (e) {
-    console.error(`Album chart error: ${e.message}`);
-  }
-
-  // ── 3. All unique field names across both charts ───────────────────────────
-  console.log('\n=== FIELD NAME SUMMARY ===');
+async function tryWeek(targetTime, yearTime) {
+  const params = { hitYear: '2026', targetTime: String(targetTime).padStart(2, '0'), yearTime: String(yearTime) };
+  console.log(`\n--- Trying week ${params.targetTime} yearTime=${yearTime} ---`);
   try {
     const digital = await fetchOnoffChart('ALL', params);
     const album   = await fetchAlbumChart(params);
-    const digitalFields = digital.length ? Object.keys(digital[0]) : [];
-    const albumFields   = album.length   ? Object.keys(album[0])   : [];
-    console.log('Digital fields:', digitalFields.join(', '));
-    console.log('Album fields:  ', albumFields.join(', '));
+    console.log(`  Digital: ${digital.length} entries | Album: ${album.length} entries`);
+    if (digital.length > 0) {
+      console.log('  Digital sample:', JSON.stringify(digital[0], null, 2));
+      const found = digital.filter(e => (e.ARTIST_NAME || '').toLowerCase().includes(TEST_ARTIST));
+      if (found.length) console.log(`  ✅ "${TEST_ARTIST}" found on Digital`);
+    }
+    if (album.length > 0) {
+      console.log('  Album sample:', JSON.stringify(album[0], null, 2));
+    }
+    return digital.length > 0 || album.length > 0;
   } catch (e) {
-    console.error(`Field summary error: ${e.message}`);
+    console.log(`  Error: ${e.message}`);
+    return false;
   }
+}
+
+async function main() {
+  console.log('Testing Circle Chart API with different week/yearTime params...\n');
+
+  // Try weeks 21-24, yearTime 1-4
+  for (const yearTime of [1, 2, 3, 4]) {
+    for (const week of [21, 22, 23, 24]) {
+      const hasData = await tryWeek(week, yearTime);
+      await new Promise(r => setTimeout(r, 800));
+      if (hasData) {
+        console.log(`\n✅ Found data: week=${week} yearTime=${yearTime}`);
+        return; // stop on first hit
+      }
+    }
+  }
+  console.log('\n❌ No data found across all tested params.');
 }
 
 main().catch(console.error);
