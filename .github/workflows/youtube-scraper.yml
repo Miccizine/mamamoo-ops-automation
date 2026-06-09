@@ -2,7 +2,7 @@ name: YouTube Scraper
 on:
   schedule:
     - cron: '0 9 * * *'   # 6PM KST — daily thread + 24hr post
-    - cron: '0 */4 * * *' # Every 4 hours — milestone checks (script self-gates by mode)
+    - cron: '0 */3 * * *' # Every 3 hours — milestone checks (script self-gates by mode)
   workflow_dispatch:
 jobs:
   scrape:
