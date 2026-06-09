@@ -3,22 +3,22 @@ const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-  .setName('hanteo-hourly')
-  .setDescription('Log Hanteo real-time chart snapshot')
-  .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1920 KST').setRequired(true))
-  .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true))
-  .addStringOption(o => o.setName('song_tags').setDescription('Song/trending hashtags e.g. #Laundri_Is_Out_Now').setRequired(false)),
-  
+    .setName('hanteo-hourly')
+    .setDescription('Log Hanteo real-time chart snapshot')
+    .addStringOption(o => o.setName('timestamp').setDescription('Time only e.g. 1920 KST').setRequired(true))
+    .addStringOption(o => o.setName('numbers').setDescription('Rank,copies,delta per version e.g. 4,22876,+633,9,12180,+69').setRequired(true))
+    .addStringOption(o => o.setName('song_tags').setDescription('Song/trending hashtags e.g. #Laundri_Is_Out_Now').setRequired(false)),
+
   async execute(interaction, sheets) {
     await interaction.deferReply({ ephemeral: true });
 
     const { getSheetData } = require('../../src/helpers');
-    
+
     // Read Config
     const configData = await getSheetData(sheets, 'Config');
     const cfg = {};
     for (const row of configData) cfg[row[0]] = row[1] || '';
-    
+
     if (cfg['COMEBACK_MODE'] !== 'ON') {
       await interaction.editReply({ content: '❌ Comeback mode is not active.' });
       return;
@@ -33,22 +33,22 @@ module.exports = {
       await interaction.editReply({ content: '❌ COMEBACK_RELEASE_DATE not set in Config.' });
       return;
     }
-    
+
     const artist    = cfg['COMEBACK_ARTIST'];
     const album     = cfg['COMEBACK_ALBUM'];
     const versNames = cfg['COMEBACK_VERSIONS'].split(',').map(v => v.trim()).filter(Boolean);
-    
+
     if (!artist || !album || versNames.length === 0) {
       await interaction.editReply({ content: '❌ COMEBACK_ARTIST, COMEBACK_ALBUM, or COMEBACK_VERSIONS not set in Config.' });
       return;
     }
-    
+
     const rawDate = cfg['COMEBACK_RELEASE_DATE'].toString().trim();
     let release;
     if (rawDate.includes('/')) {
       // M/D/YYYY or MM/DD/YYYY — Google Sheets auto-format
       const [m, d, y] = rawDate.split('/');
-      release = new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+      release = new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
     } else if (rawDate.match(/^\d{2}-\d{2}-\d{4}$/)) {
       // MM-DD-YYYY
       const [m, d, y] = rawDate.split('-');
@@ -56,38 +56,38 @@ module.exports = {
     } else {
       // YYYYMMDD or YYYY-MM-DD
       const cleaned = rawDate.replace(/-/g, '');
-      release = new Date(`${cleaned.slice(0,4)}-${cleaned.slice(4,6)}-${cleaned.slice(6,8)}`);
+      release = new Date(`${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)}`);
     }
-    
-    const now         = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-    const day         = Math.floor((now - release) / 86400000) + 1;
+
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const day = Math.floor((now - release) / 86400000) + 1;
 
     if (isNaN(day)) {
       await interaction.editReply({ content: '❌ Could not calculate day — check COMEBACK_RELEASE_DATE format in Config (expected YYYYMMDD or YYYY-MM-DD).' });
       return;
     }
-    
+
     if (day < 1 || day > 7) {
-      await interaction.editReply({ content: `❌ Today is not within the D1-D7 sales window.` });
+      await interaction.editReply({ content: '❌ Today is not within the D1-D7 sales window.' });
       return;
     }
-    
-    const timeInput   = interaction.options.getString('timestamp');
-    const kstDate     = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '').slice(2); // YYMMDD
-    const timestamp   = `${kstDate} — ${timeInput}`;
+
+    const timeInput  = interaction.options.getString('timestamp');
+    const kstDate    = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '').slice(2); // YYMMDD
+    const timestamp  = `${kstDate} — ${timeInput}`;
     const numbersRaw = interaction.options.getString('numbers');
-    const songTags = interaction.options.getString('song_tags') || '';
-    
+    const songTags   = interaction.options.getString('song_tags') || '';
+
     const parts = numbersRaw.split(',').map(p => p.trim());
     if (parts.length !== versNames.length * 3) {
-  await interaction.editReply({ content: `❌ Expected ${versNames.length * 3} values (rank,copies,delta per version), got ${parts.length}.` });
+      await interaction.editReply({ content: `❌ Expected ${versNames.length * 3} values (rank,copies,delta per version), got ${parts.length}.` });
       return;
     }
-    
+
     const versions = [];
     let total = 0;
     let parseError = false;
-    
+
     for (let i = 0; i < versNames.length; i++) {
       const rank   = parts[i * 3];
       const copies = parseInt(parts[i * 3 + 1].replace(/,/g, ''), 10);
@@ -96,9 +96,9 @@ module.exports = {
       total += copies;
       versions.push({ name: versNames[i], rank: rank === '-' ? '#-' : `#${rank}`, copies, delta });
     }
-    
+
     if (parseError || versions.length === 0) {
-      await interaction.editReply({ content: '❌ Could not parse numbers. Format: rank,copies,rank,copies,...' });
+      await interaction.editReply({ content: '❌ Could not parse numbers. Format: rank,copies,delta,rank,copies,delta,...' });
       return;
     }
 
@@ -116,14 +116,17 @@ module.exports = {
       const deltaStr = v.delta && v.delta !== '0' ? ` (${v.delta})` : '';
       return `${v.rank} ${v.name} — ${v.copies.toLocaleString('en-US')} copies${deltaStr}`;
     }).join('\n');
-    
-    // Calculate total delta
+
     const totalDelta = versions.reduce((sum, v) => {
       const n = parseInt((v.delta || '0').replace('+', ''), 10);
       return sum + (isNaN(n) ? 0 : n);
     }, 0);
-    const totalDeltaStr = totalDelta > 0 ? ` (+${totalDelta.toLocaleString('en-US')})` : totalDelta < 0 ? ` (${totalDelta.toLocaleString('en-US')})` : '';
-    
+    const totalDeltaStr = totalDelta > 0
+      ? ` (+${totalDelta.toLocaleString('en-US')})`
+      : totalDelta < 0
+        ? ` (${totalDelta.toLocaleString('en-US')})`
+        : '';
+
     const postLines = [
       `Hanteo Chart (${timestamp})`,
       ``,
@@ -141,7 +144,7 @@ module.exports = {
     await channel.send(post);
 
     // Log to sheet
-    const { getPHTTimestamp, appendSheetRow, getSheetData: getSD, updateSheetRow } = require('../../src/helpers');
+    const { getPHTTimestamp, appendSheetRow, updateSheetRow } = require('../../src/helpers');
     const today = getPHTTimestamp().split(' ')[0].replace(/-/g, '');
 
     for (const v of versions) {
@@ -160,31 +163,36 @@ module.exports = {
 
     // Log cumulative to Physical Sales Log
     await appendSheetRow(sheets, 'Physical Sales Log', [
-      new Date().toLocaleString('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''),
+      new Date().toLocaleString('en-CA', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+      }).replace(',', ''),
       album,
       'Hanteo',
       total,
-      '', // Cumulative — manual or future calculation
+      '',
     ]);
 
-    // ── Update Hanteo Album Totals ────────────────────────────────────────────────
+    // ── Update Hanteo Album Totals ────────────────────────────────────────
     const albumTotals = await getSheetData(sheets, 'Hanteo Album Totals');
     const albumRowIdx = albumTotals.findIndex((r, i) => i > 0 &&
       r[0].toLowerCase() === artist.toLowerCase() &&
       r[1].toLowerCase() === album.toLowerCase()
     );
-    
+
     if (albumRowIdx > -1) {
       const existingRow = albumTotals[albumRowIdx];
       const updatedRow  = [...existingRow];
-      updatedRow[2] = total; // Total Copies — current snapshot
-      updatedRow[3] = 'yes'; // Still Counting
+      updatedRow[2] = total;
+      updatedRow[3] = 'yes';
       await updateSheetRow(sheets, 'Hanteo Album Totals', albumRowIdx + 1, updatedRow);
     } else {
       await appendSheetRow(sheets, 'Hanteo Album Totals', [artist, album, total, 'yes']);
     }
 
-    // ── Milestone detection ───────────────────────────────────────────────────
+    // ── Milestone detection ───────────────────────────────────────────────
     const salesLog   = await getSheetData(sheets, 'Physical Sales Log');
     const albumRows  = salesLog.filter(r => r[1] === album && r[2] === 'Hanteo');
     const cumulative = albumRows.reduce((sum, r) => sum + (parseInt(r[3], 10) || 0), 0);
@@ -208,27 +216,27 @@ module.exports = {
 
       let description;
       if (isFullBreakdown) {
-      const totalsData  = await getSheetData(sheets, 'Hanteo Album Totals');
-      const artistRows  = totalsData.filter((r, i) => i > 0 &&
-        r[0].toLowerCase() === artist.toLowerCase()
-      );
-      const breakdownLines = artistRows.map(r => {
-        const stillCounting = r[3] && r[3].toLowerCase() === 'yes';
-        const copies = parseInt(r[2], 10).toLocaleString('en-US');
-        return `${r[1]} : ${copies} copies${stillCounting ? '*' : ''}`;
-      }).join('\n');
-      const hasStillCounting = artistRows.some(r => r[3] && r[3].toLowerCase() === 'yes');
-    
-      description = [
-        `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
-        ``,
-        breakdownLines,
-        hasStillCounting ? `\n*Still counting` : '',
-        ``,
-        tag.tags,
-        tag.label,
-      ].filter(l => l !== null).join('\n');
-    } else {
+        const totalsData  = await getSheetData(sheets, 'Hanteo Album Totals');
+        const artistRows  = totalsData.filter((r, i) => i > 0 &&
+          r[0].toLowerCase() === artist.toLowerCase()
+        );
+        const breakdownLines = artistRows.map(r => {
+          const stillCounting = r[3] && r[3].toLowerCase() === 'yes';
+          const copies = parseInt(r[2], 10).toLocaleString('en-US');
+          return `${r[1]} : ${copies} copies${stillCounting ? '*' : ''}`;
+        }).join('\n');
+        const hasStillCounting = artistRows.some(r => r[3] && r[3].toLowerCase() === 'yes');
+
+        description = [
+          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
+          ``,
+          breakdownLines,
+          hasStillCounting ? `\n*Still counting` : '',
+          ``,
+          tag.tags,
+          tag.label,
+        ].filter(l => l !== null).join('\n');
+      } else {
         description = [
           `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
           ``,
@@ -242,10 +250,10 @@ module.exports = {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           embeds: [{
-            title: `🏆 HANTEO MILESTONE — ${formattedThreshold}`,
-            color: 16766720,
+            title:       `🏆 HANTEO MILESTONE — ${formattedThreshold}`,
+            color:       16766720,
             description,
-            footer: { text: `Cumulative: ${cumulative.toLocaleString('en-US')} copies | ✅ Approve and post | ❌ Discard` },
+            footer:      { text: `Cumulative: ${cumulative.toLocaleString('en-US')} copies | ✅ Approve and post | ❌ Discard` },
           }],
         }),
       });
@@ -257,9 +265,7 @@ module.exports = {
         'Hanteo',
         threshold,
         'Physical Sales',
-        '',
-        '',
-        '',
+        '', '', '',
       ]);
     }
 
