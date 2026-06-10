@@ -203,8 +203,9 @@ async function sendDiscordDraft(milestones) {
       ''
     ];
 
-    if (m.songHashtags) tweetLines.push(m.songHashtags);
-    if (config.tags)    tweetLines.push(config.tags);
+    if (m.songHashtags)  tweetLines.push(m.songHashtags);
+    if (m.albumHashtags) tweetLines.push(m.albumHashtags);
+    if (config.tags)     tweetLines.push(config.tags);
     tweetLines.push(closingTags);
 
     const draftTweet = tweetLines.join('\n').trim();
