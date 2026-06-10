@@ -55,7 +55,7 @@ function parseTableRows(html) {
   return results;
 }
 
-// ── Match Artist helpers ──────────────────────────────────────────────────────────────
+// ── Match Artist helpers ──────────────────────────────────────────────────────
 
 const MAMAMOO_ARTISTS_LIST = [
   'mamamoo','마마무','solar','솔라','moonbyul','문별',
@@ -122,9 +122,8 @@ function buildPeakMap(peakData) {
 function getDayCount(entryDate, reentryDate) {
   const baseDate = reentryDate || entryDate;
   if (!baseDate) return 1;
-  // Parse date portion only (YYYY-MM-DD) to avoid timezone shift on full timestamp
   const dateOnly = baseDate.toString().slice(0, 10);
-  const todayKST = getKSTDateString(); // YYYY-MM-DD in KST
+  const todayKST = getKSTDateString();
   const start = new Date(dateOnly + 'T00:00:00Z');
   const end   = new Date(todayKST + 'T00:00:00Z');
   const diff  = Math.floor((end - start) / (1000 * 60 * 60 * 24));
@@ -219,7 +218,8 @@ async function updatePeakTracker(sheets, peakMap, updates) {
 function buildItunesNotification({
   trackName, position, country, prevPosition,
   dayCount, peakPosition, memberConfig,
-  appleUrl, songHashtags, isNew, isReentryFlag,
+  appleUrl, songHashtags, albumHashtags,
+  isNew, isReentryFlag,
   countOne, comebackConfig, isAlbumChart
 }) {
   const config        = memberConfig;
@@ -240,10 +240,10 @@ function buildItunesNotification({
   let header;
   if (isAlbumChart)      header = 'Worldwide iTunes Album Chart 🌐';
   else if (isWorldwide)  header = 'Worldwide iTunes Song Chart 🌐';
-  else                   header = `iTunes Song Chart - ${trackName}`;
+  else                   header = `iTunes Song Chart - ${country}`;
 
   const lines = [header, ''];
-  lines.push(`#${position} ${isWorldwide ? `${config.handle} - ${trackName} ${movement}` : country}`);
+  lines.push(`#${position} ${isWorldwide ? `${config.handle} - ${trackName} ${movement}` : `${config.handle} - ${trackName} ${movement}`}`);
 
   if (position === 1 && countOne > 0) {
     lines.push('');
@@ -270,8 +270,9 @@ function buildItunesNotification({
 
   if (appleUrl) lines.push('', `🔗 ${appleUrl}`);
   lines.push('');
-  if (songHashtags) lines.push('', songHashtags);
-  if (config.tags) lines.push(config.tags);
+  if (songHashtags)  lines.push(songHashtags);
+  if (albumHashtags) lines.push(albumHashtags);
+  if (config.tags)   lines.push(config.tags);
   lines.push(closingTags);
 
   return lines.join('\n').trim();
@@ -285,12 +286,12 @@ function getOrdinalSuffix(n) {
 
 // ── Close-to-#1 Post Builder ──────────────────────────────────────────────────
 
-function buildCloseToOnePost(trackName, entries, appleUrl, memberConfig, songHashtags, isContinued) {
+function buildCloseToOnePost(trackName, entries, appleUrl, memberConfig, songHashtags, albumHashtags, isContinued) {
   const config      = memberConfig;
   const closingTags = buildClosingTags(config);
   const MAX_CHARS   = 280;
 
-  const footer = [`🔗 ${appleUrl}`, songHashtags, config.tags, closingTags]
+  const footer = [`🔗 ${appleUrl}`, songHashtags, albumHashtags, config.tags, closingTags]
     .filter(Boolean).join('\n');
 
   const posts   = [];
@@ -337,7 +338,6 @@ function wasCloseToOnePostedThisHour(rawScrapeLog, trackName) {
   return false;
 }
 
-// col G stores KST date string at log time — avoids PHT/KST timezone mismatch
 function wasPostedTodayKST(rawScrapeLog, trackName, sentinelType) {
   const todayKST = getKSTDateString();
   for (let i = rawScrapeLog.length - 1; i >= 1; i--) {
@@ -458,8 +458,9 @@ async function scrapeCountryCharts(
       const album          = matchedRow[2];
       const releaseDate    = matchedRow[3];
       const activeTracking = (matchedRow[11] || '').toString().trim().toLowerCase();
-      const appleUrl       = (matchedRow[16] || '').trim();
-      const songHashtags   = (matchedRow[17] || '').trim();
+      const appleUrl       = (matchedRow[13] || '').trim();   // col N(13)
+      const songHashtags   = (matchedRow[18] || '').trim();   // col S(18)
+      const albumHashtags  = (matchedRow[19] || '').trim();   // col T(19)
 
       if (activeTracking !== 'yes') continue;
 
@@ -508,7 +509,7 @@ async function scrapeCountryCharts(
         trackName, position, country, prevPosition,
         dayCount,
         peakPosition:  existing ? existing.peakPosition : position,
-        memberConfig, appleUrl, songHashtags,
+        memberConfig, appleUrl, songHashtags, albumHashtags,
         isNew, isReentryFlag: reentryFlag,
         countOne,
         comebackConfig: null,
@@ -560,8 +561,7 @@ async function scrapeWorldwideSongChart(
       const parts       = artistTitle.split(' - ');
       const chartArtist = parts.length > 1 ? parts[0].trim() : '';
       const trackName   = parts.length > 1 ? parts.slice(1).join(' - ').trim() : artistTitle.trim();
-      
-      // Fast exit if chart artist is not Mamamoo-related
+
       if (!isMamamooRelated(chartArtist)) {
         console.log(`Skip WW: chart artist "${chartArtist}" not Mamamoo-related`);
         continue;
@@ -574,18 +574,18 @@ async function scrapeWorldwideSongChart(
       const match = findMatchInRegistry(trackName, registryData);
       if (!match) continue;
 
-      // Verify matched registry row belongs to a Mamamoo artist
       const registryArtist = (match.row[1] || '').trim();
       if (!isMamamooRelated(registryArtist)) {
         console.log(`Skip WW: "${trackName}" matched non-Mamamoo registry row (${registryArtist})`);
         continue;
       }
 
-      const appleUrl     = (match.row[16] || '').trim();
-      const songHashtags = (match.row[17] || '').trim();
-      const album        = (match.row[2]  || '').trim();
-      const releaseDate  = match.row[3];
-      const memberConfig = getMemberConfig(match.row);
+      const appleUrl      = (match.row[13] || '').trim();   // col N(13)
+      const songHashtags  = (match.row[18] || '').trim();   // col S(18)
+      const albumHashtags = (match.row[19] || '').trim();   // col T(19)
+      const album         = (match.row[2]  || '').trim();
+      const releaseDate   = match.row[3];
+      const memberConfig  = getMemberConfig(match.row);
 
       const peakKey      = `${trackName}|Worldwide`;
       const existing     = peakMap[peakKey];
@@ -623,7 +623,7 @@ async function scrapeWorldwideSongChart(
         trackName, position, country: 'Worldwide', prevPosition,
         dayCount,
         peakPosition:  existing ? existing.peakPosition : position,
-        memberConfig, appleUrl, songHashtags,
+        memberConfig, appleUrl, songHashtags, albumHashtags,
         isNew, isReentryFlag: reentryFlag,
         countOne,
         comebackConfig: null,
@@ -636,7 +636,6 @@ async function scrapeWorldwideSongChart(
         needsValidation: isNew && !recentRelease
       });
 
-      // Sentinel stores KST date in col G for reliable daily gate
       rawLogBuffer.push([
         getPHTTimestamp(), trackName, album, 'iTunes', 'WW-Daily-Sentinel',
         position, getKSTDateString(), 'worldwide-daily'
@@ -676,7 +675,6 @@ async function scrapeWorldwideAlbumChart(
     const artistTitle = cells[2] || cells[1] || '';
     if (position === 0 || !artistTitle) continue;
 
-    // Album chart: "Artist - Album"
     const parts     = artistTitle.split(' - ');
     const albumName = parts.length > 1
       ? parts.slice(1).join(' - ').trim()
@@ -686,7 +684,6 @@ async function scrapeWorldwideAlbumChart(
     if (processedAlbums.has(albumKey)) continue;
     processedAlbums.add(albumKey);
 
-    // Match against registry by album column (col C)
     let matchedRow = null;
     const normAlbum = albumName.toLowerCase();
     for (let i = 1; i < registryData.length; i++) {
@@ -704,25 +701,24 @@ async function scrapeWorldwideAlbumChart(
       continue;
     }
 
-    // Verify matched registry row belongs to a Mamamoo artist
     const registryArtist = (matchedRow[1] || '').trim();
     if (!isMamamooRelated(registryArtist)) {
       console.log(`Skip WW Album: "${albumName}" matched non-Mamamoo registry row (${registryArtist})`);
       continue;
     }
 
-    const album        = matchedRow[2];
-    const releaseDate  = matchedRow[3];
-    const appleUrl     = (matchedRow[16] || '').trim();
-    const songHashtags = (matchedRow[17] || '').trim();
-    const memberConfig = getMemberConfig(matchedRow);
+    const album         = matchedRow[2];
+    const releaseDate   = matchedRow[3];
+    const appleUrl      = (matchedRow[13] || '').trim();   // col N(13)
+    const songHashtags  = (matchedRow[18] || '').trim();   // col S(18)
+    const albumHashtags = (matchedRow[19] || '').trim();   // col T(19)
+    const memberConfig  = getMemberConfig(matchedRow);
 
     const peakKey      = `${albumName}|Worldwide-Album`;
     const existing     = peakMap[peakKey];
     const reentryFlag  = existing ? isReentry(existing.lastSeen) : false;
     const recentRelease = isRecentRelease(releaseDate);
     const isNew        = !existing;
-    const isNewPeak    = existing && position < existing.peakPosition;
     const dayCount     = existing
       ? getDayCount(existing.entryDate, existing.reentryDate || '')
       : 1;
@@ -753,7 +749,7 @@ async function scrapeWorldwideAlbumChart(
       trackName: albumName, position, country: 'Worldwide-Album', prevPosition,
       dayCount,
       peakPosition:  existing ? existing.peakPosition : position,
-      memberConfig, appleUrl, songHashtags,
+      memberConfig, appleUrl, songHashtags, albumHashtags,
       isNew, isReentryFlag: reentryFlag,
       countOne,
       comebackConfig: null,
@@ -786,7 +782,6 @@ async function main() {
   const kstHour    = getKSTHour();
   console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'} | KST hour: ${kstHour}`);
 
-  // Self-gate: 20-min cron exits immediately in normal mode
   if (!isComeback) {
     const currentMinute = new Date().getMinutes();
     const isTwentyMinCron = [15, 35, 55].includes(currentMinute);
@@ -816,14 +811,12 @@ async function main() {
   const notifications     = [];
   const closeToOneEntries = [];
 
-  // Country charts — always run
   await scrapeCountryCharts(
     sheets, registryData, peakMap,
     rawLogBuffer, peakUpdates, notifications,
     isComeback, comebackConfig, closeToOneEntries
   );
 
-  // Worldwide charts — only after 4AM KST (kworb updates around then)
   if (kstHour >= 4) {
     await scrapeWorldwideSongChart(
       registryData, peakMap,
@@ -840,7 +833,7 @@ async function main() {
     console.log(`KST hour ${kstHour} — skipping worldwide charts (updates after 4AM KST).`);
   }
 
-  // ── Close-to-#1 post (comeback mode, hourly gated) ───────────────────────
+  // ── Close-to-#1 post ─────────────────────────────────────────────────────
   if (isComeback && closeToOneEntries.length > 0 && comebackConfig?.trackName) {
     const alreadyPosted = wasCloseToOnePostedThisHour(rawScrapeLog, comebackConfig.trackName);
 
@@ -855,9 +848,10 @@ async function main() {
       })();
 
       if (comebackRow) {
-        const memberConfig = getMemberConfig(comebackRow);
-        const appleUrl     = (comebackRow[16] || '').trim();
-        const songHashtags = (comebackRow[17] || '').trim();
+        const memberConfig  = getMemberConfig(comebackRow);
+        const appleUrl      = (comebackRow[13] || '').trim();   // col N(13)
+        const songHashtags  = (comebackRow[18] || '').trim();   // col S(18)
+        const albumHashtags = (comebackRow[19] || '').trim();   // col T(19)
 
         const posts = buildCloseToOnePost(
           comebackConfig.trackName,
@@ -865,6 +859,7 @@ async function main() {
           appleUrl,
           memberConfig,
           songHashtags,
+          albumHashtags,
           false
         );
 
@@ -897,15 +892,12 @@ async function main() {
     }
   }
 
-  // ── Write logs ────────────────────────────────────────────────────────────
   console.log(`Writing ${rawLogBuffer.length} rows to Raw Scrape Log...`);
   await batchAppendRows(sheets, 'Raw Scrape Log', rawLogBuffer, 'A:H');
 
-  // ── Update peak tracker ───────────────────────────────────────────────────
   console.log(`Updating peak tracker: ${peakUpdates.length} entries...`);
   await updatePeakTracker(sheets, peakMap, peakUpdates);
 
-  // ── Send notifications ────────────────────────────────────────────────────
   const validationNeeded = notifications.filter(n => n.needsValidation);
   if (validationNeeded.length > 0) {
     console.log(`${validationNeeded.length} entries need team validation`);
