@@ -269,6 +269,7 @@ function buildItunesNotification({
   }
 
   if (appleUrl) lines.push('', `🔗 ${appleUrl}`);
+  lines.push('');
   if (songHashtags) lines.push('', songHashtags);
   if (config.tags) lines.push(config.tags);
   lines.push(closingTags);
