@@ -1,32 +1,27 @@
 name: Spotify Scraper
-
 on:
   schedule:
-    - cron: '0 14 * * *'  # Daily 10PM PHT
+    - cron: '16 15 * * *' # 11:16 PHT daily — kworb + MyStreamCount (comeback)
+    - cron: '20 15 * * *' # 11:20 PHT daily — retry if no data on first run
   workflow_dispatch:
-
 jobs:
   scrape:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-
       - name: Install dependencies
         run: npm install
-
       - name: Startup jitter
-        run: sleep $((RANDOM % 30))
-
+        run: sleep $((RANDOM % 20))
       - name: Run Spotify scraper
         env:
-          DISCORD_MILESTONE_WEBHOOK: ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+          DISCORD_CHARTS_WEBHOOK:      ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
+          DISCORD_FLAGS_WEBHOOK:       ${{ secrets.DISCORD_FLAGS_WEBHOOK }}
+          GOOGLE_SHEETS_ID:            ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: node src/spotify.js
