@@ -71,7 +71,7 @@ function getMilestoneLabel(videoType) {
   return '[MV MILESTONE] 🔥';
 }
 
-// ── Milestone dedup — reads from in-memory cache ──────────────────────────────
+// ── Milestone dedup ───────────────────────────────────────────────────────────
 
 function isMilestoneLogged(existingMilestones, trackName, platform, milestoneValue, countType) {
   for (let i = 1; i < existingMilestones.length; i++) {
@@ -85,8 +85,6 @@ function isMilestoneLogged(existingMilestones, trackName, platform, milestoneVal
   return false;
 }
 
-// ── Log milestone to in-memory cache + sheet ──────────────────────────────────
-
 function cacheMilestone(existingMilestones, trackName, album, platform, milestoneValue, countType, sourceUrl) {
   existingMilestones.push([
     '', trackName, album, platform, milestoneValue, countType, sourceUrl, '', ''
@@ -96,20 +94,13 @@ function cacheMilestone(existingMilestones, trackName, album, platform, mileston
 async function persistMilestone(sheets, trackName, album, platform, milestoneValue, countType, sourceUrl) {
   await appendSheetRow(sheets, 'Milestones Achieved', [
     getPHTTimestamp(),
-    trackName,
-    album,
-    platform,
-    milestoneValue,
-    countType,
-    sourceUrl,
-    '',
-    ''
+    trackName, album, platform, milestoneValue, countType, sourceUrl, '', ''
   ]);
 }
 
 // ── Build milestone Discord embed ─────────────────────────────────────────────
 
-function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, sourceUrl, songHashtags, videoType) {
+function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, sourceUrl, songHashtags, albumHashtags, videoType) {
   const closingTags    = buildClosingTags(config);
   const formattedViews = formatMilestoneNumber(views);
   const formattedLikes = formatLikesDisplay(likes);
@@ -125,8 +116,9 @@ function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, 
   }
 
   const tweetLines = [milestoneLabel, '', sentence, '', `🔗 ${sourceUrl}`, ''];
-  if (songHashtags) tweetLines.push(songHashtags);
-  if (config.tags)  tweetLines.push(config.tags);
+  if (songHashtags)  tweetLines.push(songHashtags);
+  if (albumHashtags) tweetLines.push(albumHashtags);
+  if (config.tags)   tweetLines.push(config.tags);
   tweetLines.push(closingTags);
 
   return {
@@ -165,9 +157,9 @@ async function sendToMilestoneWebhook(payload) {
   await new Promise(r => setTimeout(r, 2000));
 }
 
-// ── Process milestones for a single track (normal + non-comeback tracks) ──────
+// ── Process milestones (normal + non-comeback tracks) ────────────────────────
 
-async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, urls, stats, rawLogBuffer, songHashtags, videoType, isComeback) {
+async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, urls, stats, rawLogBuffer, songHashtags, albumHashtags, videoType, isComeback) {
   const primaryUrl  = urls.primary;
   const hasCombined = stats.combined !== null;
   const viewCount   = hasCombined ? stats.combined : stats.primary.views;
@@ -188,23 +180,22 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
     if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', viewMilestone, countType)) {
       cacheMilestone(existingMilestones, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
       await persistMilestone(sheets, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
-      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, likeCount, countType, primaryUrl, songHashtags, videoType);
+      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, likeCount, countType, primaryUrl, songHashtags, albumHashtags, videoType);
       await sendToMilestoneWebhook(embed);
       viewMilestoneFired = true;
       console.log(`View milestone: ${trackName} | ${viewMilestone} | ${countType}`);
     }
   }
 
-  // ── Likes milestone (100K intervals) ─────────────────────────────────────
-  // Normal mode: skip if view milestone fired
-  // Comeback mode: always fire alongside view milestone
+  // ── Likes milestone ───────────────────────────────────────────────────────
+  // Normal: skip if view milestone fired | Comeback: always fire
   if (!viewMilestoneFired || isComeback) {
     const likeMilestone = getLastMilestone(likeCount, 100000);
     if (likeMilestone > 0) {
       if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', likeMilestone, 'Likes')) {
         cacheMilestone(existingMilestones, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
         await persistMilestone(sheets, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
-        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewCount, likeMilestone, 'Likes', primaryUrl, songHashtags, videoType);
+        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewCount, likeMilestone, 'Likes', primaryUrl, songHashtags, albumHashtags, videoType);
         await sendToMilestoneWebhook(embed);
         console.log(`Likes milestone: ${trackName} | ${likeMilestone}`);
       }
@@ -214,7 +205,7 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
 
 // ── Build daily thread post ───────────────────────────────────────────────────
 
-function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashtags) {
+function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashtags, albumHashtags) {
   const MAX_CHARS   = 280;
   const closingTags = buildClosingTags(config);
   const countTypeLabel = history[0] && history[0].combined !== undefined ? 'daily combined views' : 'daily views';
@@ -226,13 +217,11 @@ function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashta
     const delta     = entry.views - history[i - 1].views;
     const prevDelta = i >= 2 ? history[i - 1].views - history[i - 2].views : null;
     let emoji = '';
-    if (prevDelta !== null) {
-      emoji = delta > prevDelta ? ' 🔥' : ' ⚠️';
-    }
+    if (prevDelta !== null) emoji = delta > prevDelta ? ' 🔥' : ' ⚠️';
     return { base: `D${entry.day} - ${views}`, delta: ` (+${delta.toLocaleString()})${emoji}` };
   });
 
-  const footerLines = [`🔗 ${primaryUrl}`, songHashtags, config.tags, closingTags]
+  const footerLines = [`🔗 ${primaryUrl}`, songHashtags, albumHashtags, config.tags, closingTags]
     .filter(Boolean)
     .join('\n');
 
@@ -255,7 +244,7 @@ function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashta
 
 // ── Build 24hr post ───────────────────────────────────────────────────────────
 
-function build24hrPost(config, trackName, views, likes, primaryUrl, secondaryViews, songHashtags) {
+function build24hrPost(config, trackName, views, likes, primaryUrl, secondaryViews, songHashtags, albumHashtags) {
   const closingTags    = buildClosingTags(config);
   const formattedLikes = formatLikesDisplay(likes);
   const hasCombined    = secondaryViews !== null && secondaryViews > 0;
@@ -269,8 +258,9 @@ function build24hrPost(config, trackName, views, likes, primaryUrl, secondaryVie
   }
 
   const lines = [sentence, '', `  ${primaryUrl}`];
-  if (songHashtags) lines.push(songHashtags);
-  if (config.tags)  lines.push(config.tags);
+  if (songHashtags)  lines.push(songHashtags);
+  if (albumHashtags) lines.push(albumHashtags);
+  if (config.tags)   lines.push(config.tags);
   lines.push(closingTags);
 
   return {
@@ -346,8 +336,8 @@ async function main() {
     if (activeTracking !== 'yes') continue;
 
     // Col O(14): Video Type | Col P(15): primary URL | Col Q(16): secondary URL
-    const videoType  = (row[14] || '').trim();
-    const primaryUrl = (row[15] || '').trim();
+    const videoType    = (row[14] || '').trim();
+    const primaryUrl   = (row[15] || '').trim();
     const secondaryUrl = (row[16] || '').trim();
 
     if (!primaryUrl) continue;
@@ -363,8 +353,9 @@ async function main() {
       videoType,
       primaryUrl, primaryId,
       secondaryId, hasCombined,
-      memberConfig: getMemberConfig(row),
-      songHashtags: (row[18] || '').trim()   // Col S(18)
+      memberConfig:  getMemberConfig(row),
+      songHashtags:  (row[18] || '').trim(),   // col S(18)
+      albumHashtags: (row[19] || '').trim()    // col T(19)
     });
   }
 
@@ -405,8 +396,7 @@ async function main() {
       const stats = { primary: primaryStats, combined: combinedViews };
 
       if (track.trackName !== comebackTrack) {
-        // Non-comeback tracks: use combined if available, normal intervals
-        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.videoType, isComeback);
+        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
         continue;
       }
 
@@ -416,12 +406,12 @@ async function main() {
       rawLogBuffer.push([
         getPHTTimestamp(), track.trackName, track.album, 'YouTube',
         combinedViews !== null ? 'Combined Views' : 'Views',
-        primaryStats.views,                          // col F: primary channel only
-        combinedViews !== null ? combinedViews : '', // col G: combined total
+        primaryStats.views,
+        combinedViews !== null ? combinedViews : '',
         track.primaryUrl
       ]);
 
-      // 1M milestone — col P (primaryStats.views) only, NOT combined
+      // 1M milestone — col P (primaryStats.views) only
       const milestone1M = getLastMilestone(primaryStats.views, 1000000);
       let viewMilestoneFired = false;
 
@@ -429,7 +419,7 @@ async function main() {
         if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', milestone1M, 'Views')) {
           cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', milestone1M, 'Views', track.primaryUrl);
           await persistMilestone(sheets, track.trackName, track.album, 'YouTube', milestone1M, 'Views', track.primaryUrl);
-          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, likeCount, 'Views', track.primaryUrl, track.songHashtags, track.videoType);
+          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, likeCount, 'Views', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
           await sendToMilestoneWebhook(embed);
           viewMilestoneFired = true;
           console.log(`Comeback 1M milestone: ${track.trackName} | ${milestone1M}`);
@@ -443,7 +433,7 @@ async function main() {
           if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', likeMilestone, 'Likes')) {
             cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
             await persistMilestone(sheets, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
-            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, primaryStats.views, likeMilestone, 'Likes', track.primaryUrl, track.songHashtags, track.videoType);
+            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, primaryStats.views, likeMilestone, 'Likes', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
             await sendToMilestoneWebhook(embed);
             console.log(`Likes milestone: ${track.trackName} | ${likeMilestone}`);
           }
@@ -452,8 +442,8 @@ async function main() {
 
       // 24hr post — fires once at 6PM KST the day AFTER release
       if (is6pmKST) {
-        const releaseDate    = cfg['COMEBACK_RELEASE_DATE'] || '';
-        const todayKST       = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+        const releaseDate     = cfg['COMEBACK_RELEASE_DATE'] || '';
+        const todayKST        = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
         const dayAfterRelease = releaseDate
           ? new Date(new Date(releaseDate).getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
           : null;
@@ -466,7 +456,7 @@ async function main() {
             track.memberConfig, track.trackName,
             primaryStats.views, likeCount, track.primaryUrl,
             secondaryStats ? secondaryStats.views : null,
-            track.songHashtags
+            track.songHashtags, track.albumHashtags
           );
           await sendToMilestoneWebhook(embed);
           console.log(`24hr post fired: ${track.trackName}`);
@@ -477,8 +467,8 @@ async function main() {
       if (is6pmKST) {
         const history = getDailyHistory(rawScrapeLog, track.trackName);
         const todayEntry = {
-          views: combinedViews !== null ? combinedViews : primaryStats.views,
-          day:   history.length + 1,
+          views:    combinedViews !== null ? combinedViews : primaryStats.views,
+          day:      history.length + 1,
           combined: combinedViews !== null ? combinedViews : undefined
         };
         const fullHistory = [...history, todayEntry];
@@ -486,7 +476,7 @@ async function main() {
         if (fullHistory.length > 0) {
           const post = buildDailyThreadPost(
             track.memberConfig, track.trackName, fullHistory,
-            track.primaryUrl, track.songHashtags
+            track.primaryUrl, track.songHashtags, track.albumHashtags
           );
           await sendToMilestoneWebhook({
             embeds: [{
@@ -510,7 +500,7 @@ async function main() {
       const stats = { primary: primaryStats, combined: combinedViews };
 
       await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig,
-        { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.videoType, isComeback);
+        { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
     }
   }
 
