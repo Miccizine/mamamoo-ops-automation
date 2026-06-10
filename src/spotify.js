@@ -18,7 +18,6 @@ const {
 
 const fetch = require('node-fetch');
 
-// ── Startup jitter ────────────────────────────────────────────────────────────
 const JITTER_MS = Math.floor(Math.random() * 20000);
 
 const ARTIST_PAGES = [
@@ -29,12 +28,13 @@ const ARTIST_PAGES = [
   { url: 'https://kworb.net/spotify/artist/7bmYpVgQub656uNTu6qGNQ_songs.html', label: 'Hwasa' }
 ];
 
+const MYSTREAMCOUNT_BASE = 'https://www.mystreamcount.com/track/';
+
 // ── Scrape helpers ────────────────────────────────────────────────────────────
 
 function parseKworbTable(html) {
   const tracks = [];
   const rows   = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
-
   for (const row of rows) {
     const cells       = [];
     const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
@@ -43,7 +43,6 @@ function parseKworbTable(html) {
       cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim());
     }
     if (cells.length < 3) continue;
-
     let title, streams, daily;
     if (cells.length >= 4) {
       title   = cells[1].trim();
@@ -54,11 +53,9 @@ function parseKworbTable(html) {
       streams = parseInt(cells[1].replace(/,/g, ''), 10) || 0;
       daily   = parseInt(cells[2].replace(/,/g, ''), 10) || 0;
     }
-
     if (!title) continue;
     tracks.push({ title, streams, daily });
   }
-
   return tracks;
 }
 
@@ -68,6 +65,20 @@ async function scrapePage(url) {
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
   return response.text();
+}
+
+// ── MyStreamCount scraper ─────────────────────────────────────────────────────
+
+async function scrapeMyStreamCount(trackId) {
+  const url = `${MYSTREAMCOUNT_BASE}${trackId}`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+  const match = html.match(/Current streams:\s*([\d,]+)/);
+  if (!match) throw new Error('Could not parse stream count from og:description');
+  return parseInt(match[1].replace(/,/g, ''), 10);
 }
 
 // ── Comeback config loader ────────────────────────────────────────────────────
@@ -81,23 +92,17 @@ async function getComebackConfig(sheets) {
   return cfg;
 }
 
-// ── PHT date string ───────────────────────────────────────────────────────────
-
 function getPHTDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 }
-
-// ── Compute day number from release date ──────────────────────────────────────
 
 function getDayNumber(releaseDateStr) {
   if (!releaseDateStr) return null;
   const release = new Date(releaseDateStr);
   const now     = new Date(getPHTDateString());
   const diff    = Math.floor((now - release) / 86400000);
-  return diff + 1; // D1 = release day
+  return diff + 1;
 }
-
-// ── Compute week number from release date ─────────────────────────────────────
 
 function getWeekNumber(releaseDateStr) {
   const day = getDayNumber(releaseDateStr);
@@ -111,7 +116,7 @@ function isWeekBoundary(releaseDateStr) {
   return day > 0 && day % 7 === 0;
 }
 
-// ── Read daily history from Raw Scrape Log ────────────────────────────────────
+// ── Raw Scrape Log helpers ────────────────────────────────────────────────────
 
 function getDailyHistory(rawScrapeLog, trackName, platform) {
   const entries = [];
@@ -124,33 +129,41 @@ function getDailyHistory(rawScrapeLog, trackName, platform) {
       });
     }
   }
-
   const byDay = {};
   for (const e of entries) {
     const day = new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
     byDay[day] = e;
   }
-
   return Object.entries(byDay)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, v], idx) => ({ ...v, day: idx + 1 }));
 }
 
-// ── Format goal line ──────────────────────────────────────────────────────────
+function getLastLoggedStreams(rawScrapeLog, trackName, platform) {
+  for (let i = rawScrapeLog.length - 1; i >= 1; i--) {
+    const row = rawScrapeLog[i];
+    if ((row[1] || '') === trackName && (row[3] || '') === platform) {
+      return parseInt((row[5] || '0').toString().replace(/,/g, ''), 10);
+    }
+  }
+  return 0;
+}
+
+// ── Goal line ─────────────────────────────────────────────────────────────────
 
 function formatGoalLine(currentStreams, goalStr, label) {
   if (!goalStr) return null;
-  const goal    = parseInt(goalStr.replace(/,/g, ''), 10);
+  const goal = parseInt(goalStr.replace(/,/g, ''), 10);
   if (isNaN(goal) || goal === 0) return null;
-  const reached = currentStreams >= goal;
-  const emoji   = reached ? '✅' : '🏁';
+  const reached   = currentStreams >= goal;
+  const emoji     = reached ? '✅' : '🏁';
   const formatted = formatMilestoneNumber(goal);
   return `${emoji}${label} : ${formatted}`;
 }
 
-// ── Build daily thread post (track) ──────────────────────────────────────────
+// ── Post builders ─────────────────────────────────────────────────────────────
 
-function buildDailyTrackPost(config, trackName, history, spotifyUrl, songHashtags, goalStr) {
+function buildDailyTrackPost(config, trackName, history, spotifyUrl, songHashtags, albumHashtags, goalStr) {
   const MAX_CHARS   = 280;
   const closingTags = buildClosingTags(config);
   const header      = `[SPOTIFY] — ${config.handle} '${trackName}' daily streams`;
@@ -169,9 +182,8 @@ function buildDailyTrackPost(config, trackName, history, spotifyUrl, songHashtag
 
   const currentStreams = history[history.length - 1]?.streams || 0;
   const goalLine       = formatGoalLine(currentStreams, goalStr, 'First Week Goal');
-
-  const footerParts = [spotifyUrl, goalLine, songHashtags, config.tags, closingTags].filter(Boolean);
-  const footerLines = footerParts.join('\n');
+  const footerParts    = [spotifyUrl, goalLine, songHashtags, albumHashtags, config.tags, closingTags].filter(Boolean);
+  const footerLines    = footerParts.join('\n');
 
   function assemblePost(lines) {
     return [header, '', ...lines, '', footerLines].join('\n').trim();
@@ -179,20 +191,16 @@ function buildDailyTrackPost(config, trackName, history, spotifyUrl, songHashtag
 
   let assembled = dayLines.map(l => l.base + l.delta);
   let post      = assemblePost(assembled);
-
   let i = 1;
   while (post.length > MAX_CHARS && i < assembled.length) {
     assembled[i] = dayLines[i].base;
     post         = assemblePost(assembled);
     i++;
   }
-
   return post;
 }
 
-// ── Build daily thread post (album) ──────────────────────────────────────────
-
-function buildDailyAlbumPost(config, albumName, albumType, history, albumSpotifyUrl, albumHashtags, goalStr) {
+function buildDailyAlbumPost(config, albumName, albumType, history, albumSpotifyUrl, songHashtags, albumHashtags, goalStr) {
   const MAX_CHARS   = 280;
   const closingTags = buildClosingTags(config);
   const header      = `[SPOTIFY] — ${config.handle} ${albumType} '${albumName}' Total Streams:`;
@@ -211,9 +219,8 @@ function buildDailyAlbumPost(config, albumName, albumType, history, albumSpotify
 
   const currentStreams = history[history.length - 1]?.streams || 0;
   const goalLine       = formatGoalLine(currentStreams, goalStr, 'First Week Goal');
-
-  const footerParts = [albumSpotifyUrl ? `🔗${albumSpotifyUrl}` : null, goalLine, albumHashtags, config.tags, closingTags].filter(Boolean);
-  const footerLines = footerParts.join('\n');
+  const footerParts    = [albumSpotifyUrl ? `🔗${albumSpotifyUrl}` : null, goalLine, songHashtags, albumHashtags, config.tags, closingTags].filter(Boolean);
+  const footerLines    = footerParts.join('\n');
 
   function assemblePost(lines) {
     return [header, '', ...lines, '', footerLines].join('\n').trim();
@@ -221,18 +228,14 @@ function buildDailyAlbumPost(config, albumName, albumType, history, albumSpotify
 
   let assembled = dayLines.map(l => l.base + l.delta);
   let post      = assemblePost(assembled);
-
   let i = 1;
   while (post.length > MAX_CHARS && i < assembled.length) {
     assembled[i] = dayLines[i].base;
     post         = assemblePost(assembled);
     i++;
   }
-
   return post;
 }
-
-// ── Build weekly post ─────────────────────────────────────────────────────────
 
 function buildWeeklyPost(config, trackOrAlbumName, isAlbum, albumType, weeklyTotals, spotifyUrl, hashtagsLine, closingTags, goalStr) {
   const MAX_CHARS = 280;
@@ -252,9 +255,8 @@ function buildWeeklyPost(config, trackOrAlbumName, isAlbum, albumType, weeklyTot
 
   const currentStreams = weeklyTotals[weeklyTotals.length - 1]?.total || 0;
   const goalLine       = formatGoalLine(currentStreams, goalStr, 'First Week Goal');
-
-  const footerParts = [spotifyUrl ? `🔗${spotifyUrl}` : null, goalLine, hashtagsLine, closingTags].filter(Boolean);
-  const footerLines = footerParts.join('\n');
+  const footerParts    = [spotifyUrl ? `🔗${spotifyUrl}` : null, goalLine, hashtagsLine, closingTags].filter(Boolean);
+  const footerLines    = footerParts.join('\n');
 
   function assemblePost(lines) {
     return [header, '', ...lines, '', footerLines].join('\n').trim();
@@ -262,18 +264,14 @@ function buildWeeklyPost(config, trackOrAlbumName, isAlbum, albumType, weeklyTot
 
   let assembled = weekLines.map(l => l.base + l.delta);
   let post      = assemblePost(assembled);
-
   let i = 1;
   while (post.length > MAX_CHARS && i < assembled.length) {
     assembled[i] = weekLines[i].base;
     post         = assemblePost(assembled);
     i++;
   }
-
   return post;
 }
-
-// ── Compute weekly totals from daily history ──────────────────────────────────
 
 function computeWeeklyTotals(history, currentWeek) {
   const result = [];
@@ -286,7 +284,7 @@ function computeWeeklyTotals(history, currentWeek) {
   return result;
 }
 
-// ── Send to Discord ───────────────────────────────────────────────────────────
+// ── Discord senders ───────────────────────────────────────────────────────────
 
 async function sendToWebhook(webhookUrl, payload) {
   const response = await fetch(webhookUrl, {
@@ -294,10 +292,8 @@ async function sendToWebhook(webhookUrl, payload) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload)
   });
-
   if (response.status === 429) {
     const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10);
-    console.log(`Rate limited. Waiting ${retryAfter}s...`);
     await new Promise(r => setTimeout(r, retryAfter * 1000));
     await fetch(webhookUrl, {
       method:  'POST',
@@ -321,7 +317,18 @@ async function sendComebackPost(post, title) {
   });
 }
 
-// ── Milestone dedup (in-memory) ───────────────────────────────────────────────
+async function sendChartsReminder(message) {
+  await sendToWebhook(process.env.DISCORD_CHARTS_WEBHOOK, {
+    embeds: [{
+      title:       '⏰ Spotify Streams — Data Not Available',
+      color:       16776960,
+      description: message,
+      footer:      { text: 'Auto-deletes before next hour' }
+    }]
+  });
+}
+
+// ── Milestone dedup ───────────────────────────────────────────────────────────
 
 function isMilestoneLogged(existingMilestones, trackName, platform, milestoneValue, countType) {
   for (let i = 1; i < existingMilestones.length; i++) {
@@ -355,7 +362,6 @@ async function main() {
   const isComeback = await getComebackMode(sheets);
   console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
 
-  // Normal mode: Saturdays only
   if (!isComeback) {
     const dayOfWeek = new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila', weekday: 'long' });
     if (dayOfWeek !== 'Saturday') {
@@ -372,7 +378,6 @@ async function main() {
   const unmatchedBuffer    = [];
   const processedTracks    = new Set();
 
-  // ── Comeback config ───────────────────────────────────────────────────────
   let cfg              = {};
   let comebackTrack    = '';
   let comebackAlbum    = '';
@@ -404,7 +409,7 @@ async function main() {
     console.log(`Comeback: "${comebackTrack}" | Day ${dayNumber} | Week ${weekNumber}`);
   }
 
-  // ── Scrape all artist pages ───────────────────────────────────────────────
+  // ── Scrape kworb artist pages ─────────────────────────────────────────────
   const scrapedStreams = {};
 
   for (const artist of ARTIST_PAGES) {
@@ -453,7 +458,6 @@ async function main() {
         track.streams, '', artist.url
       ]);
 
-      // ── Normal milestone check (all modes) ─────────────────────────────
       const interval      = 10000000;
       const lastMilestone = Math.floor(track.streams / interval) * interval;
       if (lastMilestone > 0) {
@@ -463,7 +467,8 @@ async function main() {
           milestones.push({
             trackName, album, platform: 'Spotify', milestone: lastMilestone,
             countType: 'Streams', sourceUrl: spotifyUrl, memberConfig,
-            songHashtags: (matchedRow[18] || '').trim()   // Col S(18)
+            songHashtags:  (matchedRow[18] || '').trim(),   // col S(18)
+            albumHashtags: (matchedRow[19] || '').trim()    // col T(19)
           });
         }
       }
@@ -474,7 +479,6 @@ async function main() {
 
   // ── Comeback: album kworb page ────────────────────────────────────────────
   let albumTotalStreams = 0;
-  const albumTrackStreams = {};
 
   if (isComeback && isAlbum && albumKworbUrl) {
     console.log(`Scraping album kworb page: ${albumKworbUrl}`);
@@ -485,7 +489,6 @@ async function main() {
       for (const track of tracks) {
         const match = findMatchInRegistry(track.title, registryData);
         if (!match) continue;
-
         const matchedRow     = match.row;
         const trackName      = matchedRow[0];
         const albumName      = matchedRow[2];
@@ -493,7 +496,6 @@ async function main() {
         if (activeTracking !== 'yes') continue;
         if (albumName !== comebackAlbum) continue;
 
-        albumTrackStreams[trackName] = track.streams;
         albumTotalStreams += track.streams;
 
         if (!processedTracks.has(`${trackName}|Spotify`)) {
@@ -534,56 +536,117 @@ async function main() {
 
     if (comebackTrackRow) {
       const memberConfig  = getMemberConfig(comebackTrackRow);
-      const songHashtags  = (comebackTrackRow[18] || '').trim();   // Col S(18)
-      const albumHashtags = (comebackTrackRow[19] || '').trim();   // Col T(19)
+      const songHashtags  = (comebackTrackRow[18] || '').trim();   // col S(18)
+      const albumHashtags = (comebackTrackRow[19] || '').trim();   // col T(19)
 
-      const trackSpotifyUri = comebackTrackRow[12];
+      const trackSpotifyUri  = comebackTrackRow[12];
       const resolvedTrackUrl = trackSpotifyUri
         ? 'https://open.spotify.com/track/' + trackSpotifyUri.replace('spotify:track:', '')
         : trackSpotifyUrl;
 
-      // ── Daily track post ──────────────────────────────────────────────
-      if (isDaily) {
-        const trackHistory = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
+      // ── MyStreamCount block ─────────────────────────────────────────────
+      // Runs on both 11:16 and 11:20 cron ticks (retry)
+      // Only posts if data is newer than last logged value
+      if (trackSpotifyUri) {
+        const trackId          = trackSpotifyUri.replace('spotify:track:', '');
+        const isRetryRun       = new Date().getMinutes() >= 19; // 11:20 cron
+        const lastTrackStreams  = getLastLoggedStreams(rawScrapeLog, comebackTrack, 'Spotify MSC');
+        const lastAlbumStreams  = isAlbum ? getLastLoggedStreams(rawScrapeLog, comebackAlbum, 'Spotify MSC Album') : 0;
 
-        const todayStr     = getPHTDateString();
-        const alreadyToday = trackHistory.some(e =>
-          new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === todayStr
+        let mscTrackStreams  = null;
+        let mscAlbumStreams  = null;
+        let mscFailed        = false;
+
+        console.log('Fetching MyStreamCount...');
+        try {
+          mscTrackStreams = await scrapeMyStreamCount(trackId);
+          console.log(`MSC track streams: ${mscTrackStreams.toLocaleString()}`);
+        } catch (e) {
+          console.error(`MSC fetch error: ${e.message}`);
+          mscFailed = true;
+        }
+
+        // Check if kworb already has fresher data for today
+        const todayStr        = getPHTDateString();
+        const kworbHasToday   = rawScrapeLog.some(r =>
+          (r[1] || '') === comebackTrack &&
+          (r[3] || '') === 'Spotify' &&
+          (r[0] || '').startsWith(todayStr)
         );
-        if (!alreadyToday && scrapedStreams[comebackTrack]) {
-          trackHistory.push({ day: dayNumber, streams: scrapedStreams[comebackTrack], timestamp: new Date().toISOString() });
-        }
 
-        if (trackHistory.length > 0) {
-          const post = buildDailyTrackPost(
-            memberConfig, comebackTrack, trackHistory,
-            resolvedTrackUrl, songHashtags, trackSpotifyGoal
-          );
-          await sendComebackPost(post, `📊 SPOTIFY DAILY — ${comebackTrack} D${dayNumber} — Pending Approval`);
-          console.log(`Sent daily track post: D${dayNumber}`);
-        }
+        const mscIsNew = mscTrackStreams !== null && mscTrackStreams > lastTrackStreams;
+        const useKworb = kworbHasToday && scrapedStreams[comebackTrack] > lastTrackStreams;
 
-        // ── Daily album post ────────────────────────────────────────────
-        if (isAlbum && albumTotalStreams > 0) {
-          const albumHistory = getDailyHistory(rawScrapeLog, comebackAlbum, 'Spotify');
+        if (mscFailed && isRetryRun) {
+          // Both runs failed — send reminder
+          const reminderMsg = `Spotify daily streams data not available yet for **${comebackTrack}**.\nCheck mystreamcount.com manually if needed.`;
+          await sendChartsReminder(reminderMsg);
+          console.log('MSC reminder sent.');
+        } else if (mscIsNew || useKworb) {
+          const trackStreams = useKworb ? scrapedStreams[comebackTrack] : mscTrackStreams;
+          const source       = useKworb ? 'kworb' : 'mystreamcount';
+          console.log(`Using ${source} data for daily stream post.`);
 
-          const alreadyTodayAlbum = albumHistory.some(e =>
-            new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === todayStr
-          );
-          if (!alreadyTodayAlbum) {
-            albumHistory.push({ day: dayNumber, streams: albumTotalStreams, timestamp: new Date().toISOString() });
+          // Log MSC data
+          if (mscIsNew) {
+            rawLogBuffer.push([
+              getPHTTimestamp(), comebackTrack, comebackAlbum, 'Spotify MSC', 'Streams',
+              mscTrackStreams, '', `${MYSTREAMCOUNT_BASE}${trackId}`
+            ]);
           }
 
-          const post = buildDailyAlbumPost(
-            memberConfig, comebackAlbum, albumType, albumHistory,
-            albumSpotifyUrl, albumHashtags, albumSpotifyGoal
+          // Track daily post
+          const trackHistory = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
+          const alreadyToday = trackHistory.some(e =>
+            new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === todayStr
           );
-          await sendComebackPost(post, `📊 SPOTIFY DAILY — ${comebackAlbum} D${dayNumber} — Pending Approval`);
-          console.log(`Sent daily album post: D${dayNumber}`);
+          if (!alreadyToday) {
+            trackHistory.push({ day: dayNumber, streams: trackStreams, timestamp: new Date().toISOString() });
+          }
+
+          if (trackHistory.length > 0) {
+            const post = buildDailyTrackPost(
+              memberConfig, comebackTrack, trackHistory,
+              resolvedTrackUrl, songHashtags, albumHashtags, trackSpotifyGoal
+            );
+            await sendComebackPost(post, `📊 SPOTIFY DAILY — ${comebackTrack} D${dayNumber} — Pending Approval`);
+            console.log(`Sent daily track post: D${dayNumber}`);
+          }
+
+          // Album daily post
+          if (isAlbum) {
+            // Try to get album total from MSC for each track, or fall back to kworb total
+            const albumStreams = albumTotalStreams > 0 ? albumTotalStreams : null;
+            if (albumStreams) {
+              if (mscIsNew) {
+                rawLogBuffer.push([
+                  getPHTTimestamp(), comebackAlbum, comebackAlbum, 'Spotify MSC Album', 'Album Streams',
+                  albumStreams, '', albumKworbUrl
+                ]);
+              }
+
+              const albumHistory = getDailyHistory(rawScrapeLog, comebackAlbum, 'Spotify');
+              const alreadyTodayAlbum = albumHistory.some(e =>
+                new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) === todayStr
+              );
+              if (!alreadyTodayAlbum) {
+                albumHistory.push({ day: dayNumber, streams: albumStreams, timestamp: new Date().toISOString() });
+              }
+
+              const post = buildDailyAlbumPost(
+                memberConfig, comebackAlbum, albumType, albumHistory,
+                albumSpotifyUrl, songHashtags, albumHashtags, albumSpotifyGoal
+              );
+              await sendComebackPost(post, `📊 SPOTIFY DAILY — ${comebackAlbum} D${dayNumber} — Pending Approval`);
+              console.log(`Sent daily album post: D${dayNumber}`);
+            }
+          }
+        } else if (!mscFailed && !mscIsNew && !useKworb) {
+          console.log('MSC data not updated yet — will retry at 11:20 if this is the first run.');
         }
       }
 
-      // ── Weekly track post ─────────────────────────────────────────────
+      // ── Weekly posts ──────────────────────────────────────────────────
       if (isWeekly) {
         const trackHistory = getDailyHistory(rawScrapeLog, comebackTrack, 'Spotify');
         const weeklyTotals = computeWeeklyTotals(trackHistory, weekNumber);
@@ -592,13 +655,14 @@ async function main() {
           const closingTags = buildClosingTags(memberConfig);
           const post = buildWeeklyPost(
             memberConfig, comebackTrack, false, '', weeklyTotals,
-            resolvedTrackUrl, songHashtags, closingTags, trackSpotifyGoal
+            resolvedTrackUrl,
+            [songHashtags, albumHashtags].filter(Boolean).join('\n'),
+            closingTags, trackSpotifyGoal
           );
           await sendComebackPost(post, `📊 SPOTIFY WEEK ${weekNumber} — ${comebackTrack} — Pending Approval`);
           console.log(`Sent weekly track post: W${weekNumber}`);
         }
 
-        // ── Weekly album post ───────────────────────────────────────────
         if (isAlbum) {
           const albumHistory = getDailyHistory(rawScrapeLog, comebackAlbum, 'Spotify');
           const albumWeekly  = computeWeeklyTotals(albumHistory, weekNumber);
@@ -607,7 +671,9 @@ async function main() {
             const closingTags = buildClosingTags(memberConfig);
             const post = buildWeeklyPost(
               memberConfig, comebackAlbum, true, albumType, albumWeekly,
-              albumSpotifyUrl, albumHashtags, closingTags, albumSpotifyGoal
+              albumSpotifyUrl,
+              [songHashtags, albumHashtags].filter(Boolean).join('\n'),
+              closingTags, albumSpotifyGoal
             );
             await sendComebackPost(post, `📊 SPOTIFY WEEK ${weekNumber} — ${comebackAlbum} — Pending Approval`);
             console.log(`Sent weekly album post: W${weekNumber}`);
