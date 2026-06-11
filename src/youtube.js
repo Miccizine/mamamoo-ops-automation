@@ -447,7 +447,7 @@ async function main() {
         const dayAfterRelease = releaseDate
           ? new Date(new Date(releaseDate).getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
           : null;
-        const past24hr = dayAfterRelease && todayKST >= dayAfterRelease;
+        const past24hr = dayAfterRelease && todayKST === dayAfterRelease;
 
         if (past24hr && !isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', 0, '24hr')) {
           cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', 0, '24hr', track.primaryUrl);
