@@ -4,13 +4,11 @@ const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 const { getSheetsClient, getSheetData, getMemberConfig, getComebackMode } = require('./helpers');
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
 const DISCORD_WEBHOOK = process.env.DISCORD_CHARTS_WEBHOOK;
 const SHEETS_ID       = process.env.GOOGLE_SHEETS_ID;
 const TRACKER_SHEET   = 'Korean Charts Tracker';
 const DELAY_MS        = 2000;
-const CHART_COLOR     = 16744272; // orange
+const CHART_COLOR     = 16744272;
 
 const GUYSOME_SLUG = {
   melon: { realtime: 'melon/top100',   daily: 'melon/daily',  weekly: 'melon/weekly' },
@@ -22,11 +20,9 @@ const GUYSOME_SLUG = {
 
 const PLATFORM_LABEL = { melon:'MelOn', genie:'Genie', flo:'Flo', vibe:'Vibe', bugs:'Bugs' };
 
-const SENTINEL_DAILY  = '__SENTINEL__|daily|daily';
 const SENTINEL_WEEKLY = '__SENTINEL__|weekly|weekly';
-function sentinelRealtimeKey(dateStr, hour) {
-  return `__SENTINEL__|realtime|${dateStr}${String(hour).padStart(2,'0')}`;
-}
+function sentinelDailyKey(dateStr)           { return `__SENTINEL__|daily|${dateStr}`; }
+function sentinelRealtimeKey(dateStr, hour)  { return `__SENTINEL__|realtime|${dateStr}${String(hour).padStart(2,'0')}`; }
 
 // ─── KST Helpers ─────────────────────────────────────────────────────────────
 
@@ -41,7 +37,8 @@ function getKSTTimestamp() {
          `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} KST`;
 }
 
-function getKSTHour() { return getKSTDate().getUTCHours(); }
+function getKSTHour()   { return getKSTDate().getUTCHours(); }
+function getKSTMinute() { return getKSTDate().getUTCMinutes(); }
 
 function toDateStr(d) {
   const p = n => String(n).padStart(2, '0');
@@ -61,7 +58,13 @@ function getMostRecentMonday() {
   return m;
 }
 
-// ── ISO week number (matches guyso.me YYYY_WW format) ────────────────────────
+// Previous Monday = the week that just ended (for weekly chart data)
+function getPreviousMonday() {
+  const monday = getMostRecentMonday();
+  monday.setUTCDate(monday.getUTCDate() - 7);
+  return monday;
+}
+
 function getISOWeek(date) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -134,10 +137,10 @@ async function scrapeGuysome(slug, dateStr, hour) {
   }).filter(e => e.rank !== null && e.title);
 }
 
-// ─── Genie Weekly (direct HTML) ──────────────────────────────────────────────
+// ─── Genie Weekly ─────────────────────────────────────────────────────────────
 
 async function scrapeGenieWeekly() {
-  const ymd = toDateStr(getMostRecentMonday());
+  const ymd = toDateStr(getPreviousMonday());
   const url = `https://genie.co.kr/chart/top200?ditc=W&rtm=N&ymd=${ymd}`;
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MamamooCharts/1.0)' } });
   if (!res.ok) throw new Error(`Genie weekly ${res.status}`);
@@ -163,7 +166,7 @@ async function scrapeGenieWeekly() {
   return results;
 }
 
-// ─── Bugs Weekly (direct HTML) ───────────────────────────────────────────────
+// ─── Bugs Weekly ─────────────────────────────────────────────────────────────
 
 async function scrapeBugsWeekly() {
   const url = 'https://music.bugs.co.kr/chart/track/week/total';
@@ -197,7 +200,7 @@ async function scrapeBugsWeekly() {
   return results;
 }
 
-// ─── Tracker Sheet ───────────────────────────────────────────────────────────
+// ─── Tracker Sheet ────────────────────────────────────────────────────────────
 
 async function ensureTrackerSheet(sheets) {
   const meta   = await sheets.spreadsheets.get({ spreadsheetId: SHEETS_ID });
@@ -275,7 +278,7 @@ async function persistTracker(sheets, dirtyKeys, trackerMap) {
   console.log(`Tracker persisted: ${updates.length} updated, ${newRows.length} new`);
 }
 
-// ─── Sentinel ────────────────────────────────────────────────────────────────
+// ─── Sentinel ─────────────────────────────────────────────────────────────────
 
 function sentinelAlreadyRan(trackerMap, key, dateStr, hour) {
   const rec = trackerMap.get(key);
@@ -300,7 +303,24 @@ function setSentinel(trackerMap, dirtyKeys, key) {
   dirtyKeys.add(key);
 }
 
-// ─── Registry ────────────────────────────────────────────────────────────────
+// Check if all daily platforms have data for today in the tracker (across runs)
+function dailyPlatformsHaveData(trackerMap, dateStr) {
+  const required  = ['melon', 'genie', 'vibe', 'bugs'];
+  const isoDate   = dateStrToISO(dateStr);
+  const found     = new Set();
+
+  for (const [key, rec] of trackerMap.entries()) {
+    if (rec.trackName.startsWith('__SENTINEL__')) continue;
+    if ((rec.chartType || '') !== 'daily') continue;
+    if (!(rec.lastSeen || '').startsWith(isoDate)) continue;
+    const platform = rec.platform;
+    if (required.includes(platform)) found.add(platform);
+  }
+
+  return required.every(p => found.has(p));
+}
+
+// ─── Registry ─────────────────────────────────────────────────────────────────
 
 function norm(s) {
   return s.toLowerCase()
@@ -340,13 +360,13 @@ function findInRegistry(chartTitle, chartArtist, registryData) {
     return {
       memberConfig: getMemberConfig(row),
       trackName:    row[0],
-      songHashtags: (row[18] || '').trim(), // col S index 18
+      songHashtags: (row[18] || '').trim(),
     };
   }
   return null;
 }
 
-// ─── Movement ────────────────────────────────────────────────────────────────
+// ─── Movement ─────────────────────────────────────────────────────────────────
 
 function computeMovement(rank, prevPos, htmlMovement, isNew, isReNew) {
   if (isReNew) return '(Re-entry)';
@@ -409,7 +429,6 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
       const match = findInRegistry(entry.title, entry.artist, registryData);
       if (!match) continue;
 
-      // Realtime comeback mode: only post comeback track
       if (chartType === 'realtime' && comebackMode && comebackTrack) {
         const entryNorm = norm(entry.title);
         if (!entryNorm.includes(norm(comebackTrack)) && !norm(comebackTrack).includes(entryNorm)) continue;
@@ -433,7 +452,6 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
         (norm(match.trackName).includes(norm(comebackTrack)) ||
          norm(comebackTrack).includes(norm(match.trackName)));
 
-      // isRising: for comeback track in realtime, always true
       const isRising = (chartType === 'realtime' && isComeback)
         ? true
         : entry.isNew || entry.isReNew ||
@@ -450,7 +468,6 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
     }
   }
 
-  // Realtime: all 4 platforms required, at least one rising
   if (chartType === 'realtime') {
     const required = ['melon', 'genie', 'flo', 'bugs'];
     for (const [trackName, data] of trackMap.entries()) {
@@ -460,7 +477,6 @@ function processResults(chartResults, chartType, dateStr, registryData, trackerM
     }
   }
 
-  // Daily: non-comeback tracks must appear on all 4 platforms
   if (chartType === 'daily') {
     const required = ['melon', 'genie', 'vibe', 'bugs'];
     for (const [trackName, data] of trackMap.entries()) {
@@ -531,11 +547,11 @@ async function sendChartDraft(match, label, entries) {
 
 // ─── Label ────────────────────────────────────────────────────────────────────
 
-function buildLabel(chartType) {
+function buildLabel(chartType, weekMonday) {
   const kst = getKSTDate();
-  if (chartType === 'realtime') return `${String(getKSTHour()).padStart(2,'0')}KST`;
+  if (chartType === 'realtime') return `${String(getKSTHour()).padStart(2,'00')}KST`;
   if (chartType === 'daily')    return `Daily (${shortDate(kst)})`;
-  if (chartType === 'weekly')   return `Weekly (${weekRangeLabel(getMostRecentMonday())})`;
+  if (chartType === 'weekly')   return `Weekly (${weekRangeLabel(weekMonday)})`;
   return chartType;
 }
 
@@ -547,9 +563,10 @@ async function main() {
   const sheets     = await getSheetsClient();
   const isComeback = await getComebackMode(sheets);
   const kstHour    = getKSTHour();
+  const kstMinute  = getKSTMinute();
   const kstDate    = getKSTDate();
   const dateStr    = toDateStr(kstDate);
-  const mondayStr  = toDateStr(getMostRecentMonday());
+  const mondayStr  = toDateStr(getMostRecentMonday()); // this Monday — used for weekly sentinel key
 
   console.log(`Korean charts — comeback:${isComeback} hour:${kstHour}KST date:${dateStr}`);
 
@@ -582,9 +599,13 @@ async function main() {
       for (const p of ['melon','genie','flo','bugs']) {
         const slug = GUYSOME_SLUG[p].realtime;
         if (!slug) continue;
+        // Genie updates late — use previous hour if within first 5 minutes
+        const hourToFetch = (p === 'genie' && kstMinute < 5 && kstHour > 0)
+          ? kstHour - 1
+          : kstHour;
         try {
           await delay(DELAY_MS);
-          const data = await scrapeGuysome(slug, dateStr, kstHour);
+          const data = await scrapeGuysome(slug, dateStr, hourToFetch);
           if (data.length) results.set(p, data);
           console.log(`  ${p}: ${data.length}`);
         } catch (e) { console.error(`  ${p}:`, e.message); }
@@ -606,7 +627,8 @@ async function main() {
 
   // ── DAILY ─────────────────────────────────────────────────────────────────
   if (runDaily) {
-    if (sentinelAlreadyRan(trackerMap, SENTINEL_DAILY, dateStr)) {
+    const dailySentinelKey = sentinelDailyKey(dateStr);
+    if (sentinelAlreadyRan(trackerMap, dailySentinelKey, dateStr)) {
       console.log('Daily already ran today. Skipping.');
     } else {
       console.log('Daily...');
@@ -618,22 +640,44 @@ async function main() {
           await delay(DELAY_MS);
           const data = await scrapeGuysome(slug, dateStr, null);
           if (data.length) results.set(p, data);
-          console.log(`  ${p}: ${data.length}`);
+          console.log(`  ${p}: ${data.length ? data.length : 'no data yet'}`);
         } catch (e) { console.error(`  ${p}:`, e.message); }
       }
+
       if (results.size) {
         const tmDaily = processResults(results, 'daily', dateStr, registryData, trackerMap, dirtyKeys, cfg);
-        const lb = buildLabel('daily');
-        for (const { match, entries } of tmDaily.values()) {
-          entries.sort((a,b) => a.rank - b.rank);
-          await sendChartDraft(match, lb, entries);
-          await delay(DELAY_MS);
-        }
-        const dailyExpected = ['melon', 'genie', 'vibe', 'bugs'];
-        if (dailyExpected.every(p => results.has(p))) {
-          setSentinel(trackerMap, dirtyKeys, SENTINEL_DAILY);
+
+        // Write tracker first so concurrent runs see updated state
+        await persistTracker(sheets, dirtyKeys, trackerMap);
+        dirtyKeys.clear();
+
+        // Check if all 4 platforms now have data for today (this run + previous runs)
+        const allPlatformsReady = dailyPlatformsHaveData(trackerMap, dateStr);
+
+        if (allPlatformsReady) {
+          // Set sentinel before posting to prevent concurrent duplicate posts
+          setSentinel(trackerMap, dirtyKeys, dailySentinelKey);
+          await persistTracker(sheets, dirtyKeys, trackerMap);
+          dirtyKeys.clear();
+
+          const lb = buildLabel('daily');
+          for (const { match, entries } of tmDaily.values()) {
+            entries.sort((a,b) => a.rank - b.rank);
+            await sendChartDraft(match, lb, entries);
+            await delay(DELAY_MS);
+          }
+          console.log('Daily posted and sentinel set.');
         } else {
-          console.log('Not all daily platforms available yet — will retry next run.');
+          const missing = ['melon','genie','vibe','bugs'].filter(p => {
+            const isoDate = dateStrToISO(dateStr);
+            for (const [key, rec] of trackerMap.entries()) {
+              if (rec.trackName.startsWith('__SENTINEL__')) continue;
+              if (rec.chartType !== 'daily') continue;
+              if (rec.platform === p && (rec.lastSeen || '').startsWith(isoDate)) return false;
+            }
+            return true;
+          });
+          console.log(`Daily: waiting for ${missing.join(', ')} — will retry next run.`);
         }
       } else {
         console.log('Daily data not available yet. Will retry next run.');
@@ -647,9 +691,10 @@ async function main() {
       console.log('Weekly already ran this Monday. Skipping.');
     } else {
       console.log('Weekly...');
-      const results   = new Map();
-      const monday    = getMostRecentMonday();
-      const melonKey  = getMelonWeeklyKey(monday); // YYYY_WW format
+      const results  = new Map();
+      // Use previous Monday's data — the week that just ended
+      const monday   = getPreviousMonday();
+      const melonKey = getMelonWeeklyKey(monday);
 
       try {
         await delay(DELAY_MS);
@@ -673,16 +718,21 @@ async function main() {
       } catch (e) { console.error('  bugs weekly:', e.message); }
 
       if (results.size) {
-        const tmWeekly = processResults(results, 'weekly', mondayStr, registryData, trackerMap, dirtyKeys, cfg);
-        const lb = buildLabel('weekly');
-        for (const { match, entries } of tmWeekly.values()) {
-          entries.sort((a,b) => a.rank - b.rank);
-          await sendChartDraft(match, lb, entries);
-          await delay(DELAY_MS);
-        }
         const weeklyExpected = ['melon', 'genie', 'bugs'];
         if (weeklyExpected.every(p => results.has(p))) {
+          // Set sentinel before posting
           setSentinel(trackerMap, dirtyKeys, SENTINEL_WEEKLY);
+          await persistTracker(sheets, dirtyKeys, trackerMap);
+          dirtyKeys.clear();
+
+          const tmWeekly = processResults(results, 'weekly', toDateStr(monday), registryData, trackerMap, dirtyKeys, cfg);
+          const lb = buildLabel('weekly', monday);
+          for (const { match, entries } of tmWeekly.values()) {
+            entries.sort((a,b) => a.rank - b.rank);
+            await sendChartDraft(match, lb, entries);
+            await delay(DELAY_MS);
+          }
+          console.log('Weekly posted and sentinel set.');
         } else {
           console.log('Not all weekly platforms available yet — will retry next run.');
         }
