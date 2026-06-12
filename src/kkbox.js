@@ -288,8 +288,8 @@ async function main() {
           lines.push(...entries);
           lines.push('');
         }
-        if (songHashtags)  lines.push(songHashtags);
-        if (albumHashtags) lines.push(albumHashtags);
+        const hashtagLine = [songHashtags, albumHashtags].filter(Boolean).join(' ');
+        if (hashtagLine)   lines.push(hashtagLine);
         if (config.tags)   lines.push(config.tags);
         lines.push(closing);
 
