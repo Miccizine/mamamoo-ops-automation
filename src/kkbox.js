@@ -290,6 +290,7 @@ async function main() {
         }
         if (songHashtags)  lines.push(songHashtags);
         if (albumHashtags) lines.push(albumHashtags);
+        if (config.tags)   lines.push(config.tags);
         lines.push(closing);
 
         await sendEmbed(title, lines);
