@@ -111,7 +111,7 @@ function getMemberConfig(row) {
 function buildClosingTags(config) {
   const isGroup = config.handle === '#MAMAMOO';
   if (isGroup) return '#마마무 #ママム #妈妈木\n@RBW_MAMAMOO';
-  return `#마마무 ${config.label}`;
+  return `${config.label}`;
 }
 
 // ── Milestone Helpers ─────────────────────────────────────────────────────────
