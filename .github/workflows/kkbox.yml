@@ -1,0 +1,28 @@
+name: KKBOX Chart Scraper
+
+on:
+  schedule:
+    - cron: '0 16 * * *'   # 1AM KST daily (covers daily charts)
+    - cron: '0 16 * * 1'   # 1AM KST Monday (weekly charts — same run, script self-gates)
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run KKBOX scraper
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          DISCORD_CHARTS_WEBHOOK: ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
+        run: node src/kkbox.js
