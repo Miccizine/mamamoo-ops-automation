@@ -571,8 +571,8 @@ async function main() {
   console.log(`Korean charts — comeback:${isComeback} hour:${kstHour}KST date:${dateStr}`);
 
   const runRealtime = isComeback && (kstHour < 3 || kstHour >= 6);
-  const runDaily    = kstHour >= 14;
-  const runWeekly   = kstDate.getUTCDay() === 1 && kstHour >= 14;
+  const runDaily    = kstHour >= 18;
+  const runWeekly   = kstDate.getUTCDay() === 1 && kstHour >= 18;
 
   if (!runRealtime && !runDaily && !runWeekly) {
     console.log('Nothing to run. Exiting.'); return;
