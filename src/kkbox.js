@@ -37,7 +37,7 @@ function isMamamooArtist(name) {
 function getKSTDate() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).format(new Date());
+  }).format(new Date()); // YYYY-MM-DD
 }
 
 function getKSTMonday() {
@@ -45,6 +45,20 @@ function getKSTMonday() {
   const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
   now.setDate(now.getDate() + diff);
   return now.toISOString().slice(0, 10);
+}
+
+function toCompact(dateStr) {
+  // "2026-06-05" → "20260605"
+  return dateStr.replace(/-/g, '');
+}
+
+function weeklyDateLabel(chartDate) {
+  // chartDate is week start; display is start+1 ~ start+7
+  const start = new Date(chartDate);
+  const d1 = new Date(start); d1.setDate(d1.getDate() + 1);
+  const d2 = new Date(start); d2.setDate(d2.getDate() + 7);
+  const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, '');
+  return `${fmt(d1)}~${fmt(d2)}`;
 }
 
 function movementStr(current, previous) {
@@ -59,9 +73,14 @@ async function fetchChart(terr, lang, path) {
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} — ${url}`);
   const html = await res.text();
-  const m = html.match(/var chart = (\[[\s\S]+?\]);\s*\n/);
-  if (!m) throw new Error(`chart variable not found — ${url}`);
-  return JSON.parse(m[1]);
+
+  const chartMatch = html.match(/var chart = (\[[\s\S]+?\]);\s*\n/);
+  if (!chartMatch) throw new Error(`chart variable not found — ${url}`);
+
+  const dateMatch = html.match(/var chartDate = "([^"]+)"/);
+  const chartDate = dateMatch ? dateMatch[1] : getKSTDate();
+
+  return { entries: JSON.parse(chartMatch[1]), chartDate };
 }
 
 async function ensureSheet(sheets, spreadsheetId) {
@@ -117,11 +136,11 @@ async function flushWrites(sheets, spreadsheetId, updates, appends) {
   }
 }
 
-async function sendEmbed(territory, lines) {
+async function sendEmbed(title, descLines) {
   const payload = {
     embeds: [{
-      title: `${territory.flag} KKBOX ${territory.label}`,
-      description: lines.join('\n').trim(),
+      title,
+      description: descLines.join('\n').trim(),
       color: 16711680,
       footer: { text: `${getPHTTimestamp()} • Pending approval` }
     }]
@@ -161,7 +180,7 @@ async function main() {
   const appends = [];
 
   for (const territory of TERRITORIES) {
-    const dailySentinel = `daily_${territory.code}_${kstDate}`;
+    const dailySentinel  = `daily_${territory.code}_${kstDate}`;
     const weeklySentinel = `weekly_${territory.code}_${kstMonday}`;
     const dailyDone  = tracker.has(`__s__${dailySentinel}`);
     const weeklyDone = tracker.has(`__s__${weeklySentinel}`);
@@ -171,17 +190,19 @@ async function main() {
       continue;
     }
 
-    // found[freq][label] = [{ pos, trackName, mov, registryRow }]
-    const found = { daily: {}, weekly: {} };
+    // Collect: configKey → { config, registryRow, songHashtags, albumHashtags,
+    //                         daily: { chartLabel: [lines] }, weekly: { chartLabel: [lines] },
+    //                         dailyChartDate, weeklyChartDate }
+    const byConfig = new Map();
 
     for (const chart of CHARTS) {
       if (chart.freq === 'daily'  && dailyDone) continue;
       if (chart.freq === 'weekly' && (!isMonday || weeklyDone)) continue;
 
-      let entries;
+      let entries, chartDate;
       try {
         await new Promise(r => setTimeout(r, 2000));
-        entries = await fetchChart(territory.code, territory.lang, chart.path);
+        ({ entries, chartDate } = await fetchChart(territory.code, territory.lang, chart.path));
       } catch (e) {
         console.error(`[${territory.code}/${chart.path}]`, e.message);
         continue;
@@ -191,22 +212,23 @@ async function main() {
         if (!isMamamooArtist(entry.artist_name || '')) continue;
 
         const trackName = entry.song_name || entry.album_name || '';
-        const pos = entry.rankings.this_period;
+        const pos  = entry.rankings.this_period;
         const prev = entry.rankings.last_period;
-        const mov = movementStr(pos, prev);
-        const upsertKey = `${trackName}|${territory.code}|${chart.path}`;
-        const existing = tracker.get(upsertKey);
+        const mov  = movementStr(pos, prev);
 
-        const peak = existing ? Math.min(pos, parseInt(existing.row[C.PEAK]) || pos) : pos;
-        const peakDate = existing
+        // Upsert tracker sheet
+        const upsertKey = `${trackName}|${territory.code}|${chart.path}`;
+        const existing  = tracker.get(upsertKey);
+        const peak      = existing ? Math.min(pos, parseInt(existing.row[C.PEAK]) || pos) : pos;
+        const peakDate  = existing
           ? (pos < parseInt(existing.row[C.PEAK] || pos + 1) ? kstDate : existing.row[C.PEAK_DATE])
           : kstDate;
-        const entryDate  = existing ? existing.row[C.ENTRY] : kstDate;
+        const entryDate   = existing ? existing.row[C.ENTRY] : kstDate;
         const reentryDate = (mov === '(RE)' && existing && !existing.row[C.REENTRY])
-          ? kstDate
-          : (existing ? existing.row[C.REENTRY] || '' : '');
+          ? kstDate : (existing ? existing.row[C.REENTRY] || '' : '');
 
-        const rowValues = [trackName, territory.code, chart.path, pos, mov, peak, peakDate, entryDate, kstDate, reentryDate];
+        const rowValues = [trackName, territory.code, chart.path, pos, mov,
+          peak, peakDate, entryDate, kstDate, reentryDate];
 
         if (existing && existing.rowIndex >= 0) {
           updates.push({ rowIndex: existing.rowIndex, values: rowValues });
@@ -215,44 +237,62 @@ async function main() {
           tracker.set(upsertKey, { rowIndex: -1, row: rowValues });
         }
 
-        const registryRow = findMatchInRegistry(trackName, registryRows);
-        if (!found[chart.freq][chart.label]) found[chart.freq][chart.label] = [];
-        found[chart.freq][chart.label].push({ pos, trackName, mov, registryRow });
+        // Group by member config for Discord embeds
+        const registryRow   = findMatchInRegistry(trackName, registryRows);
+        const config        = registryRow ? getMemberConfig(registryRow) : { handle: 'MAMAMOO', tags: '', label: '@RBW_MAMAMOO' };
+        const configKey     = config.handle;
+
+        if (!byConfig.has(configKey)) {
+          byConfig.set(configKey, {
+            config,
+            registryRow,
+            songHashtags:  registryRow ? (registryRow[18] || '') : '',
+            albumHashtags: registryRow ? (registryRow[19] || '') : '',
+            daily:   {},
+            weekly:  {},
+            dailyChartDate:  null,
+            weeklyChartDate: null,
+          });
+        }
+
+        const bucket = byConfig.get(configKey);
+        const freqBucket = bucket[chart.freq];
+        if (!freqBucket[chart.label]) freqBucket[chart.label] = [];
+        freqBucket[chart.label].push(`#${pos} ${trackName} ${mov}`);
+
+        if (chart.freq === 'daily'  && !bucket.dailyChartDate)  bucket.dailyChartDate  = chartDate;
+        if (chart.freq === 'weekly' && !bucket.weeklyChartDate) bucket.weeklyChartDate = chartDate;
       }
     }
 
-    // Build embed
-    const hasDaily  = Object.keys(found.daily).length > 0;
-    const hasWeekly = Object.keys(found.weekly).length > 0;
-    if (!hasDaily && !hasWeekly) {
-      // no Mamamoo found — still write sentinels below
-    } else {
-      const lines = [];
-      for (const [freq, sections] of [['daily', found.daily], ['weekly', found.weekly]]) {
+    // Send one embed per config per frequency
+    for (const [, bucket] of byConfig) {
+      const { config, songHashtags, albumHashtags } = bucket;
+      const closing = buildClosingTags(config);
+
+      for (const freq of ['daily', 'weekly']) {
+        const sections = bucket[freq];
         if (Object.keys(sections).length === 0) continue;
-        lines.push(`**${freq.charAt(0).toUpperCase() + freq.slice(1)}**`);
-        for (const [label, results] of Object.entries(sections)) {
+
+        const chartDate = freq === 'daily' ? bucket.dailyChartDate : bucket.weeklyChartDate;
+        const dateLabel = freq === 'daily'
+          ? toCompact(chartDate)
+          : weeklyDateLabel(chartDate);
+
+        const title = `${territory.flag} KKBOX ${territory.label} — ${freq.charAt(0).toUpperCase() + freq.slice(1)} (${dateLabel})`;
+
+        const lines = [];
+        for (const [label, entries] of Object.entries(sections)) {
           lines.push(label);
-          for (const r of results) {
-            const config = r.registryRow ? getMemberConfig(r.registryRow) : null;
-            const handle = config ? config.handle : 'MAMAMOO';
-            lines.push(`#${r.pos} ${r.trackName} — #${handle} ${r.mov}`);
-          }
+          lines.push(...entries);
           lines.push('');
         }
-      }
+        if (songHashtags)  lines.push(songHashtags);
+        if (albumHashtags) lines.push(albumHashtags);
+        lines.push(closing);
 
-      // Hashtags from first matched registry row
-      const firstMatch = Object.values(found).flatMap(s => Object.values(s)).flat().find(r => r.registryRow);
-      if (firstMatch) {
-        const row = firstMatch.registryRow;
-        if (row[18]) lines.push(row[18]);
-        if (row[19]) lines.push(row[19]);
-        const config = getMemberConfig(row);
-        lines.push(buildClosingTags(config));
+        await sendEmbed(title, lines);
       }
-
-      await sendEmbed(territory, lines);
     }
 
     // Write sentinels
