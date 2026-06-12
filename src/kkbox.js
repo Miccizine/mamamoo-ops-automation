@@ -238,11 +238,10 @@ async function main() {
         }
 
         // Group by member config for Discord embeds
-        const registryRow   = findMatchInRegistry(trackName, registryRows);
-        const r = findMatchInRegistry('Good Goodbye', registryRows);
-        console.log('match:', r ? r[0] : 'none', '| hwasa col:', r ? r[9] : 'n/a');
-        const config        = registryRow ? getMemberConfig(registryRow) : { handle: 'MAMAMOO', tags: '', label: '@RBW_MAMAMOO' };
-        const configKey     = config.handle;
+        const match       = findMatchInRegistry(trackName, registryRows);
+        const registryRow = match ? match.row : null;
+        const config      = registryRow ? getMemberConfig(registryRow) : { handle: '#MAMAMOO', tags: '', label: '@RBW_MAMAMOO' };
+        const configKey   = config.handle;
 
         if (!byConfig.has(configKey)) {
           byConfig.set(configKey, {
