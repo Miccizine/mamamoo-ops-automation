@@ -784,7 +784,7 @@ async function main() {
 
   if (!isComeback) {
     const currentMinute = new Date().getMinutes();
-    const isTwentyMinCron = [15, 35, 55].includes(currentMinute);
+    const isTwentyMinCron = [6, 21, 36, 51].includes(currentMinute);
     if (isTwentyMinCron) {
       console.log('Normal mode — 20-min cron suppressed. Exiting.');
       return;
