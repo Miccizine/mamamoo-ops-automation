@@ -547,9 +547,16 @@ async function main() {
       // ── MyStreamCount block ─────────────────────────────────────────────
       // Runs on both 11:16 and 11:20 cron ticks (retry)
       // Only posts if data is newer than last logged value
-      if (trackSpotifyUri) {
+      const phtHour        = parseInt(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila', hour: 'numeric', hour12: false
+      }).format(new Date()), 10);
+      const is10amRun      = phtHour === 10;
+      const is1116Run      = phtHour === 23;
+      const isRetryRun     = new Date().getMinutes() >= 19 && (is1116Run || is10amRun);
+      const shouldRunDailyPost = (dayNumber <= 6 && !is10amRun) || (dayNumber >= 7 && is10amRun);
+      
+      if (trackSpotifyUri && shouldRunDailyPost) {
         const trackId          = trackSpotifyUri.replace('spotify:track:', '');
-        const isRetryRun       = new Date().getMinutes() >= 19; // 11:20 cron
         const lastTrackStreams  = getLastLoggedStreams(rawScrapeLog, comebackTrack, 'Spotify MSC');
         const lastAlbumStreams  = isAlbum ? getLastLoggedStreams(rawScrapeLog, comebackAlbum, 'Spotify MSC Album') : 0;
 
