@@ -3,7 +3,7 @@ on:
   schedule:
     - cron: '16 15 * * *' # 11:16 PHT daily — kworb + MyStreamCount (D1-D6)
     - cron: '20 15 * * *' # 11:20 PHT daily — retry if no data (D1-D6)
-    - cron: '0 2 * * *'   # 10:00 PHT daily — MyStreamCount D7-D14
+    - cron: '0 2 * * *'   # 10:00 PHT daily — MyStreamCount (D7-D14)
     - cron: '20 2 * * *'  # 10:20 PHT daily — retry if no data (D7-D14)
   workflow_dispatch:
 jobs:
