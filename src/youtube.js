@@ -188,7 +188,6 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
   }
 
   // ── Likes milestone ───────────────────────────────────────────────────────
-  // Normal: skip if view milestone fired | Comeback: always fire
   if (!viewMilestoneFired || isComeback) {
     const likeMilestone = getLastMilestone(likeCount, 100000);
     if (likeMilestone > 0) {
@@ -203,76 +202,6 @@ async function processMilestones(sheets, existingMilestones, trackName, album, m
   }
 }
 
-// ── Build daily thread post ───────────────────────────────────────────────────
-
-function buildDailyThreadPost(config, trackName, history, primaryUrl, songHashtags, albumHashtags) {
-  const MAX_CHARS   = 280;
-  const closingTags = buildClosingTags(config);
-  const countTypeLabel = history[0] && history[0].combined !== undefined ? 'daily combined views' : 'daily views';
-  const header = `[YOUTUBE] — ${config.handle} '${trackName}' ${countTypeLabel}`;
-
-  const dayLines = history.map((entry, i) => {
-    const views = entry.views.toLocaleString();
-    if (i === 0) return { base: `D${entry.day} - ${views}`, delta: '' };
-    const delta     = entry.views - history[i - 1].views;
-    const prevDelta = i >= 2 ? history[i - 1].views - history[i - 2].views : null;
-    let emoji = '';
-    if (prevDelta !== null) emoji = delta > prevDelta ? ' 🔥' : ' ⚠️';
-    return { base: `D${entry.day} - ${views}`, delta: ` (+${delta.toLocaleString()})${emoji}` };
-  });
-
-  const footerLines = [`🔗 ${primaryUrl}`, songHashtags, albumHashtags, config.tags, closingTags]
-    .filter(Boolean)
-    .join('\n');
-
-  function assemblePost(lines) {
-    return [header, '', ...lines, '', footerLines].join('\n').trim();
-  }
-
-  let assembled = dayLines.map(l => l.base + l.delta);
-  let post = assemblePost(assembled);
-
-  let i = 1;
-  while (post.length > MAX_CHARS && i < assembled.length) {
-    assembled[i] = dayLines[i].base;
-    post = assemblePost(assembled);
-    i++;
-  }
-
-  return post;
-}
-
-// ── Build 24hr post ───────────────────────────────────────────────────────────
-
-function build24hrPost(config, trackName, views, likes, primaryUrl, secondaryViews, songHashtags, albumHashtags) {
-  const closingTags    = buildClosingTags(config);
-  const formattedLikes = formatLikesDisplay(likes);
-  const hasCombined    = secondaryViews !== null && secondaryViews > 0;
-
-  let sentence;
-  if (hasCombined) {
-    const combinedTotal = views + secondaryViews;
-    sentence = `${config.handle}'s '${trackName}' MV has surpassed ${views.toLocaleString()} views & ${formattedLikes} likes on ${config.handle}'s official YouTube channel in the first 24 hours!\nCombined: ${combinedTotal.toLocaleString()} views`;
-  } else {
-    sentence = `${config.handle}'s '${trackName}' MV has surpassed ${views.toLocaleString()} views and ${formattedLikes} likes on YouTube in the first 24 hours!`;
-  }
-
-  const lines = [sentence, '', `  ${primaryUrl}`];
-  if (songHashtags)  lines.push(songHashtags);
-  if (albumHashtags) lines.push(albumHashtags);
-  if (config.tags)   lines.push(config.tags);
-  lines.push(closingTags);
-
-  return {
-    embeds: [{
-      title: '📊 24HR POST — Pending Approval',
-      color: 16711680,
-      description: lines.join('\n').trim(),
-      footer: { text: '✅ Approve and post manually to X | ❌ Discard' }
-    }]
-  };
-}
-
 // ── Fetch comeback config ─────────────────────────────────────────────────────
 
 async function getComebackConfig(sheets) {
@@ -282,33 +211,6 @@ async function getComebackConfig(sheets) {
     if (data[i][0]) cfg[data[i][0]] = (data[i][1] || '').toString().trim();
   }
   return cfg;
-}
-
-// ── Read daily view history from Raw Scrape Log ───────────────────────────────
-
-function getDailyHistory(rawScrapeLog, trackName) {
-  const entries = [];
-  for (let i = 1; i < rawScrapeLog.length; i++) {
-    if (rawScrapeLog[i][1] === trackName && rawScrapeLog[i][3] === 'YouTube') {
-      entries.push({
-        timestamp: rawScrapeLog[i][0],
-        views: rawScrapeLog[i][6]
-          ? parseInt(rawScrapeLog[i][6].toString().replace(/,/g, ''), 10)
-          : parseInt((rawScrapeLog[i][5] || '0').toString().replace(/,/g, ''), 10),
-        combined: rawScrapeLog[i][6] ? parseInt(rawScrapeLog[i][6].toString().replace(/,/g, ''), 10) : undefined
-      });
-    }
-  }
-
-  const byDay = {};
-  for (const e of entries) {
-    const day = new Date(e.timestamp).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-    byDay[day] = e;
-  }
-
-  return Object.entries(byDay)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, v], idx) => ({ ...v, day: idx + 1 }));
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -322,7 +224,6 @@ async function main() {
 
   const registryData       = await getSheetData(sheets, 'Master Registry');
   const existingMilestones = await getSheetData(sheets, 'Milestones Achieved');
-  const rawScrapeLog       = isComeback ? await getSheetData(sheets, 'Raw Scrape Log') : [];
   const rawLogBuffer       = [];
 
   const trackQueue = [];
@@ -335,7 +236,6 @@ async function main() {
 
     if (activeTracking !== 'yes') continue;
 
-    // Col O(14): Video Type | Col P(15): primary URL | Col Q(16): secondary URL
     const videoType    = (row[14] || '').trim();
     const primaryUrl   = (row[15] || '').trim();
     const secondaryUrl = (row[16] || '').trim();
@@ -354,8 +254,8 @@ async function main() {
       primaryUrl, primaryId,
       secondaryId, hasCombined,
       memberConfig:  getMemberConfig(row),
-      songHashtags:  (row[18] || '').trim(),   // col S(18)
-      albumHashtags: (row[19] || '').trim()    // col T(19)
+      songHashtags:  (row[18] || '').trim(),
+      albumHashtags: (row[19] || '').trim()
     });
   }
 
@@ -381,10 +281,6 @@ async function main() {
   if (isComeback) {
     const cfg           = await getComebackConfig(sheets);
     const comebackTrack = cfg['COMEBACK_TRACK'] || '';
-
-    const nowKST  = new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false });
-    const kstHour = parseInt(nowKST, 10);
-    const is6pmKST = kstHour >= 18 && kstHour < 20;
 
     for (const track of trackQueue) {
       const primaryStats   = statsMap[track.primaryId]   || { views: 0, likes: 0 };
@@ -437,55 +333,6 @@ async function main() {
             await sendToMilestoneWebhook(embed);
             console.log(`Likes milestone: ${track.trackName} | ${likeMilestone}`);
           }
-        }
-      }
-
-      // 24hr post — fires once at 6PM KST the day AFTER release
-      if (is6pmKST) {
-        const releaseDate     = cfg['COMEBACK_RELEASE_DATE'] || '';
-        const todayKST        = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-        const dayAfterRelease = releaseDate
-          ? new Date(new Date(releaseDate).getTime() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
-          : null;
-        const past24hr = dayAfterRelease && todayKST === dayAfterRelease;
-
-        if (past24hr && !isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', 0, '24hr')) {
-          cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', 0, '24hr', track.primaryUrl);
-          await persistMilestone(sheets, track.trackName, track.album, 'YouTube', 0, '24hr', track.primaryUrl);
-          const embed = build24hrPost(
-            track.memberConfig, track.trackName,
-            primaryStats.views, likeCount, track.primaryUrl,
-            secondaryStats ? secondaryStats.views : null,
-            track.songHashtags, track.albumHashtags
-          );
-          await sendToMilestoneWebhook(embed);
-          console.log(`24hr post fired: ${track.trackName}`);
-        }
-      }
-
-      // Daily thread post — fires at 6PM KST, uses combined views if available
-      if (is6pmKST) {
-        const history = getDailyHistory(rawScrapeLog, track.trackName);
-        const todayEntry = {
-          views:    combinedViews !== null ? combinedViews : primaryStats.views,
-          day:      history.length + 1,
-          combined: combinedViews !== null ? combinedViews : undefined
-        };
-        const fullHistory = [...history, todayEntry];
-
-        if (fullHistory.length > 0) {
-          const post = buildDailyThreadPost(
-            track.memberConfig, track.trackName, fullHistory,
-            track.primaryUrl, track.songHashtags, track.albumHashtags
-          );
-          await sendToMilestoneWebhook({
-            embeds: [{
-              title: '📈 DAILY THREAD POST — Pending Approval',
-              color: 16711680,
-              description: post,
-              footer: { text: '✅ Post as reply to previous day | ❌ Discard' }
-            }]
-          });
         }
       }
     }
