@@ -17,6 +17,7 @@ async function processMilestonesSheet(sheets) {
     const rowIndex    = i; // 0-based for API
     const hasDate     = !!(row[0] && row[0] !== '');
     const checkboxVal = row[7];
+    console.log(`Row ${i+1} checkboxVal:`, JSON.stringify(checkboxVal), typeof checkboxVal);
     const hasCheckbox = checkboxVal !== '' && checkboxVal !== undefined;
     const isChecked   = checkboxVal === true || checkboxVal === 'TRUE';
     const alreadyGray = !!(row[8] && row[8] !== '');
