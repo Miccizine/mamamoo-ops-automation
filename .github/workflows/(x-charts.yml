@@ -1,0 +1,24 @@
+name: X Charts Scraper
+on:
+  schedule:
+    - cron: '0 */8 * * *' # Every 8 hours
+  workflow_dispatch:
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install
+      - name: Startup jitter
+        run: sleep $((RANDOM % 30))
+      - name: Run X Charts scraper
+        env:
+          DISCORD_CHARTS_WEBHOOK:      ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
+          GOOGLE_SHEETS_ID:            ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: node src/x-charts.js
