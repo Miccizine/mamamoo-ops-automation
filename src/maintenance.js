@@ -1,7 +1,10 @@
 'use strict';
 const { getSheetsClient, getSheetData, getPHTTimestamp } = require('./helpers');
+
 const GRAY_BACKGROUND = { red: 0.851, green: 0.851, blue: 0.851 };
 const GRAY_TEXT       = { red: 0.4,   green: 0.4,   blue: 0.4 };
+const WHITE           = { red: 1,     green: 1,      blue: 1   };
+const BLACK           = { red: 0,     green: 0,      blue: 0   };
 
 async function processMilestonesSheet(sheets) {
   const sheetId     = process.env.GOOGLE_SHEETS_ID;
@@ -13,15 +16,13 @@ async function processMilestonesSheet(sheets) {
   const gid = mSheet.properties.sheetId;
 
   for (let i = 1; i < data.length; i++) {
-    const row         = data[i];
-    const rowIndex    = i; // 0-based for API
-    const hasDate     = !!(row[0] && row[0] !== '');
+    const row        = data[i];
+    const rowIndex   = i; // 0-based for API
+    const hasDate    = !!(row[0] && row[0] !== '');
     const checkboxVal = row[7];
-    console.log(`Row ${i+1} checkboxVal:`, JSON.stringify(checkboxVal), typeof checkboxVal);
     const hasCheckbox = checkboxVal !== '' && checkboxVal !== undefined;
     const isChecked   = checkboxVal === true || checkboxVal === 'TRUE';
     const alreadyGray = !!(row[8] && row[8] !== '');
-    const isPublished = isChecked && alreadyGray;
 
     // Add checkbox if row has data but no checkbox yet
     if (hasDate && !hasCheckbox) {
@@ -33,6 +34,22 @@ async function processMilestonesSheet(sheets) {
         }
       });
       console.log(`Added checkbox to row ${i + 1}: ${row[1]}`);
+    }
+
+    // Reset gray if checkbox is unticked but row is grayed (inherited or corrupt state)
+    if (!isChecked && alreadyGray) {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: sheetId,
+        range: `Milestones Achieved!I${i + 1}`
+      });
+      requests.push({
+        repeatCell: {
+          range: { sheetId: gid, startRowIndex: rowIndex, endRowIndex: rowIndex + 1, startColumnIndex: 0, endColumnIndex: 9 },
+          cell: { userEnteredFormat: { backgroundColor: WHITE, textFormat: { foregroundColor: BLACK } } },
+          fields: 'userEnteredFormat(backgroundColor,textFormat)'
+        }
+      });
+      console.log(`Cleared gray on unticked row ${i + 1}: ${row[1]}`);
     }
 
     // Gray out row only if checkbox is ticked and not already grayed
