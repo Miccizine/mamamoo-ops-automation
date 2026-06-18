@@ -108,7 +108,7 @@ function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, 
 
   let sentence;
   if (countType === 'Combined Views') {
-    sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} combined views and ${formattedLikes} likes on YouTube!`;
+    sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} combined views and ${formattedLikes} likes on YouTube! 🎉`;
   } else if (countType === 'Likes') {
     sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedLikes} likes on YouTube!`;
   } else {
