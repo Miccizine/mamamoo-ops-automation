@@ -147,6 +147,68 @@ async function fetchAlbumChart(params) {
   return Object.values(json.List || {});
 }
 
+async function fetchGlobalChart(termGbn, yyyymmdd) {
+  const body = new URLSearchParams({ termGbn, yyyymmdd });
+  const res = await fetch(`${BASE_URL}/data/api/chart/global`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${BASE_URL}/page_chart/global.circle`, 'User-Agent': 'Mozilla/5.0' },
+    body,
+  });
+  if (!res.ok) throw new Error(`global chart API ${res.status}`);
+  const json = await res.json();
+  return Object.values(json.List || {});
+}
+
+async function fetchGlobalDefaultDate(termGbn) {
+  const body = new URLSearchParams({ termGbn });
+  const res = await fetch(`${BASE_URL}/data/api/chart_func/global/default_value`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${BASE_URL}/page_chart/global.circle`, 'User-Agent': 'Mozilla/5.0' },
+    body,
+  });
+  if (!res.ok) throw new Error(`global default_value API ${res.status}`);
+  const json = await res.json();
+  return json.List && json.List[0] ? json.List[0]['YYYYMMDD'] : '';
+}
+
+function getMostRecentMonday() {
+  const now = getKSTDate();
+  const day = now.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() - diff);
+  return mon.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '');
+}
+
+function todayKST() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '');
+}
+
+async function postGlobalChartEntry(row, termGbn, dateLabel) {
+  const title  = row.Title  || '';
+  const artist = row.Artist || '';
+  const rank   = row.Rank   || '';
+  const status = (row.RankStatus || '').toLowerCase();
+  const movementStr = status === 'new' ? '(NEW)' : status === 'hot' ? '(HOT 🔥)' : '(=)';
+  const termLabel   = termGbn === 'day' ? 'Daily' : 'Weekly';
+  const tags        = resolveArtistTags(artist);
+
+  await sendEmbed({
+    title: `[CIRCLE GLOBAL K-POP] ${termLabel} — ${dateLabel}`,
+    color: 16744272,
+    description: [
+      `**#${rank}** ${movementStr}`,
+      '',
+      `🎵 **${title}**`,
+      `🎤 ${artist}`,
+      '',
+      tags.tags,
+      tags.closing,
+    ].filter(Boolean).join('\n'),
+    footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isOurArtist(artistName) {
@@ -258,6 +320,15 @@ function findExistingRow(rows, trackName, chartType) {
     }
   }
   return null;
+}
+
+function findSentinelRow(rows, sentinelKey) {
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if ((r[COL.TRACK_NAME] || '') === sentinelKey) return true;
+  }
+  return false;
 }
 
 function checkReentry(lastSeen) {
@@ -426,6 +497,70 @@ async function main() {
     console.log(`Processed: ${hit.chartName} #${hit.rank} — ${hit.title}`);
   }
 
+  // ── GLOBAL K-POP CHART ────────────────────────────────────────────────────
+  await new Promise(r => setTimeout(r, 1500));
+  sheetRows = await getSheetData(sheets, SHEET);
+  const todayKSTStr = todayKST();
+
+  // Weekly — always-on, one post per Monday
+  const globalWeeklyKey = `**SENTINEL**|global-weekly|${getMostRecentMonday()}`;
+  if (!findSentinelRow(sheetRows, globalWeeklyKey)) {
+    console.log('Fetching Global K-pop Weekly...');
+    try {
+      const yyyymmdd = await fetchGlobalDefaultDate('week');
+      const list     = await fetchGlobalChart('week', yyyymmdd);
+      const ourRows  = list.filter(r => isOurArtist(r.Artist));
+      if (ourRows.length > 0) {
+        const s = new Array(11).fill('');
+        s[COL.TRACK_NAME] = globalWeeklyKey;
+        s[COL.LAST_SEEN]  = todayKSTStr;
+        await appendSheetRow(sheets, SHEET, s);
+        for (const row of ourRows) {
+          await postGlobalChartEntry(row, 'week', yyyymmdd);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        console.log(`Global K-pop Weekly: ${ourRows.length} entries posted`);
+      } else {
+        console.log('Global K-pop Weekly: no Mamamoo entries');
+      }
+    } catch (e) {
+      console.error(`Failed Global K-pop Weekly: ${e.message}`);
+    }
+  } else {
+    console.log('Global K-pop Weekly: already posted this week');
+  }
+
+  // Daily — comeback only, one post per day
+  if (isComeback) {
+    const globalDailyKey = `**SENTINEL**|global-daily|${todayKSTStr}`;
+    sheetRows = await getSheetData(sheets, SHEET);
+    if (!findSentinelRow(sheetRows, globalDailyKey)) {
+      console.log('Fetching Global K-pop Daily...');
+      try {
+        const yyyymmdd = await fetchGlobalDefaultDate('day');
+        const list     = await fetchGlobalChart('day', yyyymmdd);
+        const ourRows  = list.filter(r => isOurArtist(r.Artist));
+        if (ourRows.length > 0) {
+          const s = new Array(11).fill('');
+          s[COL.TRACK_NAME] = globalDailyKey;
+          s[COL.LAST_SEEN]  = todayKSTStr;
+          await appendSheetRow(sheets, SHEET, s);
+          for (const row of ourRows) {
+            await postGlobalChartEntry(row, 'day', yyyymmdd);
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          console.log(`Global K-pop Daily: ${ourRows.length} entries posted`);
+        } else {
+          console.log('Global K-pop Daily: no Mamamoo entries');
+        }
+      } catch (e) {
+        console.error(`Failed Global K-pop Daily: ${e.message}`);
+      }
+    } else {
+      console.log('Global K-pop Daily: already posted today');
+    }
+  }
+  
   console.log('Circle Chart scraper complete.');
 }
 
