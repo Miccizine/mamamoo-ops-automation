@@ -211,29 +211,6 @@ async function postGlobalChartEntry(row, termGbn, dateLabel) {
 
 // ── Retail Album Chart API callers ──────────────────────────────────────────────
 
-async function fetchRetailHourTime() {
-  const body = new URLSearchParams({ termGbn: 'hour' });
-  const res = await fetch(`${BASE_URL}/data/api/chart_func/retail/hour_time`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${BASE_URL}/page_chart/retail.circle?termGbn=hour`, 'User-Agent': 'Mozilla/5.0' },
-    body,
-  });
-  if (!res.ok) throw new Error(`retail hour_time API ${res.status}`);
-  return res.json(); // { Hour_Range: [...], YYYYMMDD, ListType, Hour_End }
-}
-
-async function fetchRetailHourly(yyyymmdd, hourRangeStr, thisHour) {
-  const body = new URLSearchParams({ yyyymmdd, HourRange: hourRangeStr, ListType: '', thisHour: thisHour || '' });
-  const res = await fetch(`${BASE_URL}/data/api/chart/retail_hour`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${BASE_URL}/page_chart/retail.circle?termGbn=hour`, 'User-Agent': 'Mozilla/5.0' },
-    body,
-  });
-  if (!res.ok) throw new Error(`retail_hour API ${res.status}`);
-  const json = await res.json();
-  return json.List || [];
-}
-
 async function fetchRetailDefaultDate(termGbn) {
   const body = new URLSearchParams({ termGbn });
   const res = await fetch(`${BASE_URL}/data/api/chart_func/retail/default_value`, {
@@ -636,46 +613,11 @@ async function main() {
   }
 
   // ── RETAIL ALBUM CHART ────────────────────────────────────────────────────
+  // Cadence matches onoff/album charts: comeback mode runs every 6hr (per cron),
+  // normal mode runs once daily (per cron). One post per day via daily sentinel.
   await new Promise(r => setTimeout(r, 1500));
   sheetRows = await getSheetData(sheets, SHEET);
-
-  // Hourly — comeback only, one post per hour
-  if (isComeback) {
-    const nowHourKST = getKSTDate().getHours();
-    const retailHourlyKey = `**SENTINEL**|retail-hourly|${todayKSTStr}${String(nowHourKST).padStart(2, '0')}`;
-    if (!findSentinelRow(sheetRows, retailHourlyKey)) {
-      console.log('Fetching Retail Album Chart Hourly...');
-      try {
-        const hourTime = await fetchRetailHourTime();
-        const rows     = await fetchRetailHourly(hourTime.YYYYMMDD, hourTime.Hour_Range.join(','), '');
-        const ourRows  = rows.filter(r => isOurArtist(r.Artist));
-        if (ourRows.length > 0) {
-          const s = new Array(11).fill('');
-          s[COL.TRACK_NAME] = retailHourlyKey;
-          s[COL.LAST_SEEN]  = todayKSTStr;
-          await appendSheetRow(sheets, SHEET, s);
-          for (const row of ourRows) {
-            await postRetailChartEntry(row, `Hour ${hourTime.Hour_End}`);
-            await appendSheetRow(sheets, 'Physical Sales Log', [
-              kstTimestamp(), row.Album, 'Circle Retail', row.rowSum || '', '',
-            ]);
-            await new Promise(r => setTimeout(r, 2000));
-          }
-          console.log(`Retail Hourly: ${ourRows.length} entries posted`);
-        } else {
-          console.log('Retail Hourly: no Mamamoo entries');
-        }
-      } catch (e) {
-        console.error(`Failed Retail Hourly: ${e.message}`);
-      }
-    } else {
-      console.log('Retail Hourly: already posted this hour');
-    }
-  }
-
-  // Daily — always-on, one post per day
   const retailDailyKey = `**SENTINEL**|retail-daily|${todayKSTStr}`;
-  sheetRows = await getSheetData(sheets, SHEET);
   if (!findSentinelRow(sheetRows, retailDailyKey)) {
     console.log('Fetching Retail Album Chart Daily...');
     try {
