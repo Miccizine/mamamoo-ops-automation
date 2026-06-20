@@ -1,26 +1,21 @@
 name: Circle Chart Tracker
-
 on:
   schedule:
-    - cron: '0 2 * * *'      # 10AM PHT daily (normal mode)
+    - cron: '0 2 * * *'          # 10AM PHT daily (normal mode)
     - cron: '0 2,8,14,20 * * *'  # every 6 hours PHT (comeback mode)
   workflow_dispatch:
-
 jobs:
   circle-chart:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-
       - run: npm install
-
       - name: Run Circle Chart tracker
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEETS_ID:            ${{ secrets.GOOGLE_SHEETS_ID }}
-          DISCORD_MILESTONE_WEBHOOK:   ${{ secrets.DISCORD_MILESTONE_WEBHOOK }}
+          DISCORD_CHARTS_WEBHOOK:      ${{ secrets.DISCORD_CHARTS_WEBHOOK }}
         run: node src/circle-chart.js
