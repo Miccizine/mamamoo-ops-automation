@@ -11,7 +11,7 @@ module.exports = {
   async execute(interaction, sheets) {
     await interaction.deferReply({ ephemeral: true });
 
-    const { getSheetData, getPHTTimestamp, appendSheetRow } = require('../../src/helpers');
+    const { getSheetData, getPHTTimestamp, appendSheetRow, updateSheetRow } = require('../../src/helpers');
 
     // Read Config
     const configData = await getSheetData(sheets, 'Config');
@@ -141,6 +141,35 @@ module.exports = {
       total,
       '',
     ]);
+
+    // ── Update Hanteo Album Totals ────────────────────────────────────────
+    // Previously only hanteo-hourly.js did this, so Album Totals (and the
+    // 50K full-breakdown post, which reads from it) went stale on any day
+    // where only /hanteo-daily was run.
+    const albumTotals = await getSheetData(sheets, 'Hanteo Album Totals');
+    const albumRowIdx = albumTotals.findIndex((r, i) => i > 0 &&
+      r[0].toLowerCase() === artist.toLowerCase() &&
+      r[1].toLowerCase() === album.toLowerCase()
+    );
+
+    if (albumRowIdx > -1) {
+      const existingRow = albumTotals[albumRowIdx];
+      const updatedRow  = [...existingRow];
+      updatedRow[2] = total;
+      updatedRow[3] = 'yes';
+      await updateSheetRow(sheets, 'Hanteo Album Totals', albumRowIdx + 1, updatedRow);
+    } else {
+      await appendSheetRow(sheets, 'Hanteo Album Totals', [artist, album, total, 'yes']);
+    }
+
+    // ── Milestone detection ───────────────────────────────────────────────
+    // Previously missing entirely from this command — a 10K/50K crossing
+    // could be missed on any day staff only ran /hanteo-daily.
+    // `total` here is already cumulative (sum of D1...Dn daily figures),
+    // dedup against Milestones Achieved prevents double-posting if
+    // /hanteo-hourly already caught the same threshold earlier that day.
+    const { checkAndPostHanteoMilestones } = require('../../src/physical-sales');
+    await checkAndPostHanteoMilestones(sheets, artist, album, total, tag);
 
     await interaction.editReply({ content: '✅ Daily summary posted and logged.' });
   },
