@@ -3,7 +3,7 @@
 const {
   getSheetsClient, getSheetData, getPHTTimestamp,
   appendSheetRow, updateSheetRow, getComebackMode,
-  getMemberConfig, buildClosingTags
+  getMemberConfig, buildClosingTags, findMatchInRegistry
 } = require('./helpers');
 const fetch = require('node-fetch');
 
@@ -43,6 +43,13 @@ const ONOFF_CHARTS = [
 
 const BASE_URL = 'https://circlechart.kr';
 const SHEET    = 'Circle Chart Tracker';
+
+const CERT_SHEET = 'Circle Cert Tracker';
+const CERT_TYPES = [
+  { serviceGbn: 'ALBUM', label: 'Album' },
+  { serviceGbn: 'S1020', label: 'Download' },
+  { serviceGbn: 'S1040', label: 'Streaming' },
+];
 
 const COL = {
   TRACK_NAME:   0,
@@ -184,7 +191,12 @@ function todayKST() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).replace(/-/g, '');
 }
 
-async function postGlobalChartEntry(row, termGbn, dateLabel) {
+// fix: template was too crowded (separate 🎵/🎤 lines, extra blank lines).
+// Now: rank+artist+title+movement on one line, then song/album hashtags +
+// handle on one line, then closing tags. Also added song/album hashtag
+// lookup against Master Registry — was missing entirely despite the
+// standing project rule that all chart/milestone posts include them.
+async function postGlobalChartEntry(row, termGbn, dateLabel, registryData) {
   const title  = row.Title  || '';
   const artist = row.Artist || '';
   const rank   = row.Rank   || '';
@@ -192,17 +204,15 @@ async function postGlobalChartEntry(row, termGbn, dateLabel) {
   const movementStr = status === 'new' ? '(NEW)' : status === 'hot' ? '(HOT 🔥)' : '(=)';
   const termLabel   = termGbn === 'day' ? 'Daily' : 'Weekly';
   const tags        = resolveArtistTags(artist);
+  const { songHashtags, albumHashtags } = getHashtagsForTitle(title, registryData);
 
   await sendEmbed({
     title: `[CIRCLE GLOBAL K-POP] ${termLabel} — ${dateLabel}`,
     color: 16744272,
     description: [
-      `**#${rank}** ${movementStr}`,
+      `#${rank} ${artist} - ${title} ${movementStr}`,
       '',
-      `🎵 **${title}**`,
-      `🎤 ${artist}`,
-      '',
-      tags.tags,
+      [songHashtags, albumHashtags, tags.handle].filter(Boolean).join(' '),
       tags.closing,
     ].filter(Boolean).join('\n'),
     footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
@@ -235,7 +245,8 @@ async function fetchRetailList(termGbn, yyyymmdd) {
   return json.List || [];
 }
 
-async function postRetailChartEntry(row, label) {
+// fix: same spacing cleanup + hashtag lookup as postGlobalChartEntry
+async function postRetailChartEntry(row, label, registryData) {
   const album    = row.Album  || '';
   const artist   = row.Artist || '';
   const rank     = row.RankInt || '';
@@ -243,22 +254,127 @@ async function postRetailChartEntry(row, label) {
   const status   = (row.RankStatus || '').toLowerCase();
   const movementStr = status === 'new' ? '(NEW)' : status === 'hot' ? '(HOT 🔥)' : (row.CalRank || '(=)');
   const tags     = resolveArtistTags(artist);
+  const { songHashtags, albumHashtags } = getHashtagsForTitle(album, registryData);
 
   await sendEmbed({
     title: `[PHYSICAL] Circle Retail Album Chart — ${label}`,
     color: 16744272,
     description: [
-      `**#${rank}** ${movementStr}`,
+      `#${rank} ${artist} - ${album} ${movementStr}`,
+      sales ? `${sales} copies` : '',
       '',
-      `💿 **${album}**`,
-      `🎤 ${artist}`,
-      sales ? `📦 ${sales} copies` : '',
-      '',
-      tags.tags,
+      [songHashtags, albumHashtags, tags.handle].filter(Boolean).join(' '),
       tags.closing,
     ].filter(Boolean).join('\n'),
     footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
   });
+}
+
+// ── Certification API caller ─────────────────────────────────────────────────
+// Endpoint confirmed from actual /page_cert/chart.circle?serviceGbn=X page
+// source — much simpler than onoff/album: just one param, no date/week math.
+
+async function fetchCertChart(serviceGbn) {
+  const body = new URLSearchParams({ serviceGbn });
+  const res = await fetch(`${BASE_URL}/data/api/cert/chart`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${BASE_URL}/page_cert/chart.circle?serviceGbn=${serviceGbn}`, 'User-Agent': 'Mozilla/5.0' },
+    body,
+  });
+  if (!res.ok) throw new Error(`cert API ${res.status} for ${serviceGbn}`);
+  const json = await res.json();
+  if (json.ResultStatus !== 'OK') return [];
+  // List structure unconfirmed (object-with-numeric-keys like onoff/album, or
+  // a true array) — Object.values() is safe either way, no-op on a real array.
+  return Object.values(json.List || {});
+}
+
+function certAlreadyPosted(rows, serviceGbn, grade, album, title) {
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (
+      (r[0] || '') === serviceGbn &&
+      (r[1] || '') === grade &&
+      (r[3] || '').toLowerCase() === album.toLowerCase() &&
+      (r[2] || '').toLowerCase() === (title || '').toLowerCase()
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function ensureCertSheet(sheets) {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+  const meta   = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = meta.data.sheets.some(s => s.properties.title === CERT_SHEET);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: CERT_SHEET } } }] },
+    });
+    await appendSheetRow(sheets, CERT_SHEET, [
+      'Service Type', 'Grade', 'Title', 'Album', 'Artist', 'Certify Date', 'Issue Date', 'Posted At',
+    ]);
+    console.log(`Created sheet: ${CERT_SHEET}`);
+  }
+}
+
+async function postCertEntry(row, label, registryData) {
+  const album       = row.ALBUM_NAME || '';
+  const artist      = row.ARTIST_NAME || '';
+  const title       = row.SONG_NAME || '';
+  const grade       = row.Certify_Grade || '';
+  const certifyDate = row.Certify_Date || '';
+  const issueDate   = row.Issue_date || '';
+  const tags        = resolveArtistTags(artist);
+  const { songHashtags, albumHashtags } = getHashtagsForTitle(title || album, registryData);
+
+  await sendEmbed({
+    title: `[CERTIFICATION] ${label} — ${grade}`,
+    color: 16766720,
+    description: [
+      `${artist} - ${title ? `${title} (${album})` : album}`,
+      [certifyDate ? `Certified ${certifyDate}` : '', issueDate ? `Issued ${issueDate}` : ''].filter(Boolean).join(' | '),
+      '',
+      [songHashtags, albumHashtags, tags.handle].filter(Boolean).join(' '),
+      tags.closing,
+    ].filter(Boolean).join('\n'),
+    footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
+  });
+}
+
+async function checkCertifications(sheets, registryData) {
+  await ensureCertSheet(sheets);
+  let certRows = await getSheetData(sheets, CERT_SHEET);
+
+  for (const certType of CERT_TYPES) {
+    console.log(`Fetching ${certType.label} certifications...`);
+    try {
+      const list    = await fetchCertChart(certType.serviceGbn);
+      const ourRows = list.filter(r => isOurArtist(r.ARTIST_NAME));
+
+      for (const row of ourRows) {
+        const grade = row.Certify_Grade || '';
+        const album = row.ALBUM_NAME || '';
+        const title = row.SONG_NAME || '';
+        if (certAlreadyPosted(certRows, certType.serviceGbn, grade, album, title)) continue;
+
+        await appendSheetRow(sheets, CERT_SHEET, [
+          certType.serviceGbn, grade, title, album, row.ARTIST_NAME || '',
+          row.Certify_Date || '', row.Issue_date || '', kstTimestamp(),
+        ]);
+        await postCertEntry(row, certType.label, registryData);
+        await new Promise(r => setTimeout(r, 2000));
+
+        certRows.push([certType.serviceGbn, grade, title, album, row.ARTIST_NAME || '']);
+      }
+    } catch (e) {
+      console.error(`Failed ${certType.label} certifications: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -278,20 +394,26 @@ function resolveArtistTags(artistName) {
   return GROUP_TAGS;
 }
 
+// new: looks up song/album hashtags (Master Registry cols S/19, T/20 — 0-indexed
+// 18/19) for a given chart title. Returns blanks (filtered out by the post
+// functions) if no registry match is found, e.g. for album-level titles that
+// don't line up with individual track names.
+function getHashtagsForTitle(title, registryData) {
+  if (!registryData || !title) return { songHashtags: '', albumHashtags: '' };
+  const match = findMatchInRegistry(title, registryData);
+  if (!match) return { songHashtags: '', albumHashtags: '' };
+  return {
+    songHashtags:  match.row[18] || '',
+    albumHashtags: match.row[19] || '',
+  };
+}
+
 function formatMovement(rankChange, rankStatus) {
   if (rankStatus === 'new')  return '(NEW)';
   if (rankStatus === 'same') return '(=)';
   const n = parseInt(rankChange, 10);
   if (isNaN(n) || n === 0) return '(=)';
   return n > 0 ? `(+${n})` : `(${n})`;
-}
-
-function rankStatusEmoji(status) {
-  if (status === 'new')  return '🆕';
-  if (status === 'up')   return '🔺';
-  if (status === 'down') return '🔻';
-  if (status === 'hot')  return '🔥';
-  return '➖';
 }
 
 // ── Sheet init ────────────────────────────────────────────────────────────────
@@ -331,29 +453,26 @@ async function sendEmbed(embed) {
   }
 }
 
-async function postChartEntry(hit, isReentry) {
-  const emoji    = rankStatusEmoji(hit.rankStatus);
-  const peakLine = hit.peakPos ? `🏆 Peak: #${hit.peakPos}` : '';
-  const reentryLine = isReentry ? '\n🔄 Re-entry' : '';
-  const tags     = resolveArtistTags(hit.artist);
-
-  const description = [
-    `**#${hit.rank}** ${emoji} ${hit.movement}${reentryLine}`,
-    '',
-    `🎵 **${hit.title}**`,
-    `🎤 ${hit.artist}`,
-    peakLine,
-    '',
-    `📅 Week ${hit.week}`,
-    '',
-    tags.tags,
-    tags.closing,
-  ].filter(Boolean).join('\n');
+// fix: same spacing cleanup + hashtag lookup as the two functions above.
+// Kept peak position and week number (this chart type's extra context that
+// Global K-pop and Retail don't have); dropped the rankStatusEmoji() prefix
+// since the movement label itself already conveys NEW/HOT/etc.
+async function postChartEntry(hit, isReentry, registryData) {
+  const reentryTag = isReentry ? ' (Re-entry)' : '';
+  const peakLine   = hit.peakPos ? `Peak #${hit.peakPos}` : '';
+  const tags       = resolveArtistTags(hit.artist);
+  const { songHashtags, albumHashtags } = getHashtagsForTitle(hit.title, registryData);
 
   await sendEmbed({
     title: `[PHYSICAL] Circle Chart — ${hit.chartName}`,
     color: 3066993,
-    description,
+    description: [
+      `#${hit.rank} ${hit.artist} - ${hit.title} ${hit.movement}${reentryTag}`,
+      [peakLine, `Week ${hit.week}`].filter(Boolean).join(' | '),
+      '',
+      [songHashtags, albumHashtags, tags.handle].filter(Boolean).join(' '),
+      tags.closing,
+    ].filter(Boolean).join('\n'),
     footer: { text: '✅ Approve and post manually to X | ❌ Discard' },
   });
 }
@@ -401,6 +520,9 @@ async function main() {
   console.log(`Mode: ${isComeback ? 'COMEBACK' : 'NORMAL'}`);
 
   await ensureSheet(sheets);
+
+  // Fetched once, passed into every post function for song/album hashtag lookup
+  const registryData = await getSheetData(sheets, 'Master Registry');
 
   const params = getCurrentWeekParams();
   const week   = weekLabel(params);
@@ -508,7 +630,7 @@ async function main() {
       }
 
       if (!alreadyThisWeek || reentry) {
-        await postChartEntry(hit, reentry);
+        await postChartEntry(hit, reentry, registryData);
         await new Promise(r => setTimeout(r, 2000));
       } else {
         console.log(`Already posted this week: ${hit.chartName} — ${hit.title}`);
@@ -538,7 +660,7 @@ async function main() {
         ]);
       }
 
-      await postChartEntry(hit, false);
+      await postChartEntry(hit, false, registryData);
       await new Promise(r => setTimeout(r, 2000));
 
       // Refresh sheet rows after append so subsequent lookups are accurate
@@ -567,7 +689,7 @@ async function main() {
         s[COL.LAST_SEEN]  = todayKSTStr;
         await appendSheetRow(sheets, SHEET, s);
         for (const row of ourRows) {
-          await postGlobalChartEntry(row, 'week', yyyymmdd);
+          await postGlobalChartEntry(row, 'week', yyyymmdd, registryData);
           await new Promise(r => setTimeout(r, 2000));
         }
         console.log(`Global K-pop Weekly: ${ourRows.length} entries posted`);
@@ -597,7 +719,7 @@ async function main() {
           s[COL.LAST_SEEN]  = todayKSTStr;
           await appendSheetRow(sheets, SHEET, s);
           for (const row of ourRows) {
-            await postGlobalChartEntry(row, 'day', yyyymmdd);
+            await postGlobalChartEntry(row, 'day', yyyymmdd, registryData);
             await new Promise(r => setTimeout(r, 2000));
           }
           console.log(`Global K-pop Daily: ${ourRows.length} entries posted`);
@@ -630,7 +752,7 @@ async function main() {
         s[COL.LAST_SEEN]  = todayKSTStr;
         await appendSheetRow(sheets, SHEET, s);
         for (const row of ourRows) {
-          await postRetailChartEntry(row, 'Daily');
+          await postRetailChartEntry(row, 'Daily', registryData);
           await appendSheetRow(sheets, 'Physical Sales Log', [
             kstTimestamp(), row.Album, 'Circle Retail', row.rowSum || '', '',
           ]);
@@ -646,6 +768,14 @@ async function main() {
   } else {
     console.log('Retail Daily: already posted today');
   }
+
+  // ── CERTIFICATIONS ────────────────────────────────────────────────────────
+  // No date filtering on this endpoint — first run will surface Mamamoo's
+  // full certification history at once (everything not yet in Circle Cert
+  // Tracker), not just new ones going forward. Worth knowing before the
+  // first run lands in #charts-updates.
+  await new Promise(r => setTimeout(r, 1500));
+  await checkCertifications(sheets, registryData);
 
   console.log('Circle Chart scraper complete.');
 }
