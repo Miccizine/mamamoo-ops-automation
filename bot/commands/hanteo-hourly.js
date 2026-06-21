@@ -193,84 +193,14 @@ module.exports = {
     }
 
     // ── Milestone detection ───────────────────────────────────────────────
-    const salesLog   = await getSheetData(sheets, 'Physical Sales Log');
-    const albumRows  = salesLog.filter(r => r[1] === album && r[2] === 'Hanteo');
-    const cumulative = albumRows.reduce((sum, r) => sum + (parseInt(r[3], 10) || 0), 0);
-
-    const milestone10k = Math.floor(cumulative / 10000) * 10000;
-    const milestone50k = Math.floor(cumulative / 50000) * 50000;
-
-    const milestonesAchieved = await getSheetData(sheets, 'Milestones Achieved');
-    const alreadyPosted = (threshold) => milestonesAchieved.some(r =>
-      r[1] === album && r[3] === 'Hanteo' && parseInt(r[4], 10) === threshold
-    );
-
-    const webhookUrl = process.env.DISCORD_MILESTONE_WEBHOOK;
-
-    async function postMilestone(threshold, isFullBreakdown) {
-      if (threshold === 0 || alreadyPosted(threshold)) return;
-
-      const formattedThreshold = threshold >= 1000000
-        ? `${threshold / 1000000}M`
-        : `${threshold / 1000}K`;
-
-      let description;
-      if (isFullBreakdown) {
-        const totalsData  = await getSheetData(sheets, 'Hanteo Album Totals');
-        const artistRows  = totalsData.filter((r, i) => i > 0 &&
-          r[0].toLowerCase() === artist.toLowerCase()
-        );
-        const breakdownLines = artistRows.map(r => {
-          const stillCounting = r[3] && r[3].toLowerCase() === 'yes';
-          const copies = parseInt(r[2], 10).toLocaleString('en-US');
-          return `${r[1]} : ${copies} copies${stillCounting ? '*' : ''}`;
-        }).join('\n');
-        const hasStillCounting = artistRows.some(r => r[3] && r[3].toLowerCase() === 'yes');
-
-        description = [
-          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
-          ``,
-          breakdownLines,
-          hasStillCounting ? `\n*Still counting` : '',
-          ``,
-          tag.tags,
-          tag.label,
-        ].filter(l => l !== null).join('\n');
-      } else {
-        description = [
-          `.@${tag.label.replace('@', '')}'s '${album}' has surpassed ${formattedThreshold} album sales on Hanteo!`,
-          ``,
-          tag.tags,
-          tag.label,
-        ].join('\n');
-      }
-
-      await fetch(webhookUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          embeds: [{
-            title:       `🏆 HANTEO MILESTONE — ${formattedThreshold}`,
-            color:       16766720,
-            description,
-            footer:      { text: `Cumulative: ${cumulative.toLocaleString('en-US')} copies | ✅ Approve and post | ❌ Discard` },
-          }],
-        }),
-      });
-
-      await appendSheetRow(sheets, 'Milestones Achieved', [
-        getPHTTimestamp(),
-        album,
-        artist,
-        'Hanteo',
-        threshold,
-        'Physical Sales',
-        '', '', '',
-      ]);
-    }
-
-    if (milestone10k > 0) await postMilestone(milestone10k, false);
-    if (milestone50k > 0 && milestone50k !== milestone10k) await postMilestone(milestone50k, true);
+    // `total` (computed above) is already the correct cumulative figure —
+    // each Hanteo snapshot reports cumulative copies per version, so summing
+    // versions gives the true running total. Previously this block re-summed
+    // every past row in Physical Sales Log, which double/triple-counted the
+    // same cumulative number on every repeat run. Fixed by passing `total`
+    // straight through to the shared checker.
+    const { checkAndPostHanteoMilestones } = require('../../src/physical-sales');
+    await checkAndPostHanteoMilestones(sheets, artist, album, total, tag);
 
     await interaction.editReply({ content: '✅ Posted and logged.' });
   },
