@@ -99,6 +99,8 @@ async function persistMilestone(sheets, trackName, album, platform, milestoneVal
 }
 
 // ── Build milestone Discord embed ─────────────────────────────────────────────
+// URL 1 (official/main channel) only — URL 2 is distributor channels (1theK,
+// Stone Entertainment etc.) that inflate view counts; removed from all paths.
 
 function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, sourceUrl, songHashtags, albumHashtags, videoType) {
   const closingTags    = buildClosingTags(config);
@@ -107,12 +109,11 @@ function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, 
   const milestoneLabel = getMilestoneLabel(videoType);
 
   let sentence;
-  if (countType === 'Combined Views') {
-    sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} combined views and ${formattedLikes} likes on YouTube! 🎉`;
-  } else if (countType === 'Likes') {
+  if (countType === 'Likes') {
     sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedLikes} likes on YouTube!`;
   } else {
-    sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} views and ${formattedLikes} likes on YouTube!`;
+    // Views — URL 1 only, no distributor inflation
+    sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} views on YouTube!`;
   }
 
   const tweetLines = [milestoneLabel, '', sentence, '', `🔗 ${sourceUrl}`, ''];
@@ -157,44 +158,39 @@ async function sendToMilestoneWebhook(payload) {
   await new Promise(r => setTimeout(r, 2000));
 }
 
-// ── Process milestones (normal + non-comeback tracks) ────────────────────────
+// ── Process milestones (normal mode + non-comeback tracks) ────────────────────
+// Always uses URL 1 views only. Combined views path removed.
 
-async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, urls, stats, rawLogBuffer, songHashtags, albumHashtags, videoType, isComeback) {
-  const primaryUrl  = urls.primary;
-  const hasCombined = stats.combined !== null;
-  const viewCount   = hasCombined ? stats.combined : stats.primary.views;
-  const likeCount   = stats.primary.likes;
-  const countType   = hasCombined ? 'Combined Views' : 'Views';
-
+async function processMilestones(sheets, existingMilestones, trackName, album, memberConfig, primaryUrl, primaryViews, primaryLikes, rawLogBuffer, songHashtags, albumHashtags, videoType, isComeback) {
   rawLogBuffer.push([
-    getPHTTimestamp(), trackName, album, 'YouTube', countType,
-    viewCount, hasCombined ? viewCount : '', primaryUrl
+    getPHTTimestamp(), trackName, album, 'YouTube', 'Views',
+    primaryViews, '', primaryUrl
   ]);
 
   // ── View milestone ────────────────────────────────────────────────────────
-  const viewInterval  = getMilestoneInterval(viewCount);
-  const viewMilestone = getLastMilestone(viewCount, viewInterval);
+  const viewInterval  = getMilestoneInterval(primaryViews);
+  const viewMilestone = getLastMilestone(primaryViews, viewInterval);
   let viewMilestoneFired = false;
 
   if (viewMilestone > 0) {
-    if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', viewMilestone, countType)) {
-      cacheMilestone(existingMilestones, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
-      await persistMilestone(sheets, trackName, album, 'YouTube', viewMilestone, countType, primaryUrl);
-      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, likeCount, countType, primaryUrl, songHashtags, albumHashtags, videoType);
+    if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', viewMilestone, 'Views')) {
+      cacheMilestone(existingMilestones, trackName, album, 'YouTube', viewMilestone, 'Views', primaryUrl);
+      await persistMilestone(sheets, trackName, album, 'YouTube', viewMilestone, 'Views', primaryUrl);
+      const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewMilestone, primaryLikes, 'Views', primaryUrl, songHashtags, albumHashtags, videoType);
       await sendToMilestoneWebhook(embed);
       viewMilestoneFired = true;
-      console.log(`View milestone: ${trackName} | ${viewMilestone} | ${countType}`);
+      console.log(`View milestone: ${trackName} | ${viewMilestone}`);
     }
   }
 
   // ── Likes milestone ───────────────────────────────────────────────────────
   if (!viewMilestoneFired || isComeback) {
-    const likeMilestone = getLastMilestone(likeCount, 100000);
+    const likeMilestone = getLastMilestone(primaryLikes, 100000);
     if (likeMilestone > 0) {
       if (!isMilestoneLogged(existingMilestones, trackName, 'YouTube', likeMilestone, 'Likes')) {
         cacheMilestone(existingMilestones, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
         await persistMilestone(sheets, trackName, album, 'YouTube', likeMilestone, 'Likes', primaryUrl);
-        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, viewCount, likeMilestone, 'Likes', primaryUrl, songHashtags, albumHashtags, videoType);
+        const embed = buildYouTubeMilestoneEmbed(memberConfig, trackName, primaryViews, likeMilestone, 'Likes', primaryUrl, songHashtags, albumHashtags, videoType);
         await sendToMilestoneWebhook(embed);
         console.log(`Likes milestone: ${trackName} | ${likeMilestone}`);
       }
@@ -236,23 +232,19 @@ async function main() {
 
     if (activeTracking !== 'yes') continue;
 
-    const videoType    = (row[14] || '').trim();
-    const primaryUrl   = (row[15] || '').trim();
-    const secondaryUrl = (row[16] || '').trim();
+    const videoType  = (row[14] || '').trim();
+    const primaryUrl = (row[15] || '').trim();
+    // URL 2 (row[16]) and URL 3 (row[17]) are distributor channels — not fetched
 
     if (!primaryUrl) continue;
 
     const primaryId = extractVideoId(primaryUrl);
     if (!primaryId) continue;
 
-    const secondaryId = secondaryUrl ? extractVideoId(secondaryUrl) : null;
-    const hasCombined = !!secondaryId;
-
     trackQueue.push({
       row, trackName, album,
       videoType,
       primaryUrl, primaryId,
-      secondaryId, hasCombined,
       memberConfig:  getMemberConfig(row),
       songHashtags:  (row[18] || '').trim(),
       albumHashtags: (row[19] || '').trim()
@@ -261,12 +253,10 @@ async function main() {
 
   console.log(`Tracks to process: ${trackQueue.length}`);
 
-  // Batch fetch all video IDs
-  const allIds = [...new Set(trackQueue.flatMap(t =>
-    t.hasCombined ? [t.primaryId, t.secondaryId] : [t.primaryId]
-  ))];
-
+  // Batch fetch URL 1 IDs only
+  const allIds = [...new Set(trackQueue.map(t => t.primaryId))];
   const statsMap = {};
+
   for (let i = 0; i < allIds.length; i += MAX_IDS_PER_CALL) {
     const batch = allIds.slice(i, i + MAX_IDS_PER_CALL);
     console.log(`Fetching YouTube batch ${Math.floor(i / MAX_IDS_PER_CALL) + 1}: ${batch.length} IDs`);
@@ -283,31 +273,20 @@ async function main() {
     const comebackTrack = cfg['COMEBACK_TRACK'] || '';
 
     for (const track of trackQueue) {
-      const primaryStats   = statsMap[track.primaryId]   || { views: 0, likes: 0 };
-      const secondaryStats = track.hasCombined ? (statsMap[track.secondaryId] || { views: 0, likes: 0 }) : null;
-      const combinedViews  = (secondaryStats && secondaryStats.views > 0 && primaryStats.views > 0)
-        ? primaryStats.views + secondaryStats.views
-        : null;
-
-      const stats = { primary: primaryStats, combined: combinedViews };
+      const primaryStats = statsMap[track.primaryId] || { views: 0, likes: 0 };
 
       if (track.trackName !== comebackTrack) {
-        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
+        // Non-comeback tracks use normal 10M/5M intervals
+        await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, track.primaryUrl, primaryStats.views, primaryStats.likes, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
         continue;
       }
 
-      // ── Comeback track ─────────────────────────────────────────────────
-      const likeCount = primaryStats.likes;
-
+      // ── Comeback track: 1M intervals, URL 1 only ──────────────────────
       rawLogBuffer.push([
-        getPHTTimestamp(), track.trackName, track.album, 'YouTube',
-        combinedViews !== null ? 'Combined Views' : 'Views',
-        primaryStats.views,
-        combinedViews !== null ? combinedViews : '',
-        track.primaryUrl
+        getPHTTimestamp(), track.trackName, track.album, 'YouTube', 'Views',
+        primaryStats.views, '', track.primaryUrl
       ]);
 
-      // 1M milestone — col P (primaryStats.views) only
       const milestone1M = getLastMilestone(primaryStats.views, 1000000);
       let viewMilestoneFired = false;
 
@@ -315,7 +294,7 @@ async function main() {
         if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', milestone1M, 'Views')) {
           cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', milestone1M, 'Views', track.primaryUrl);
           await persistMilestone(sheets, track.trackName, track.album, 'YouTube', milestone1M, 'Views', track.primaryUrl);
-          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, likeCount, 'Views', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
+          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, milestone1M, primaryStats.likes, 'Views', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
           await sendToMilestoneWebhook(embed);
           viewMilestoneFired = true;
           console.log(`Comeback 1M milestone: ${track.trackName} | ${milestone1M}`);
@@ -323,16 +302,14 @@ async function main() {
       }
 
       // Likes milestone — fires alongside view milestone in comeback mode
-      if (!viewMilestoneFired || isComeback) {
-        const likeMilestone = getLastMilestone(likeCount, 100000);
-        if (likeMilestone > 0) {
-          if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', likeMilestone, 'Likes')) {
-            cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
-            await persistMilestone(sheets, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
-            const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, primaryStats.views, likeMilestone, 'Likes', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
-            await sendToMilestoneWebhook(embed);
-            console.log(`Likes milestone: ${track.trackName} | ${likeMilestone}`);
-          }
+      const likeMilestone = getLastMilestone(primaryStats.likes, 100000);
+      if (likeMilestone > 0) {
+        if (!isMilestoneLogged(existingMilestones, track.trackName, 'YouTube', likeMilestone, 'Likes')) {
+          cacheMilestone(existingMilestones, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
+          await persistMilestone(sheets, track.trackName, track.album, 'YouTube', likeMilestone, 'Likes', track.primaryUrl);
+          const embed = buildYouTubeMilestoneEmbed(track.memberConfig, track.trackName, primaryStats.views, likeMilestone, 'Likes', track.primaryUrl, track.songHashtags, track.albumHashtags, track.videoType);
+          await sendToMilestoneWebhook(embed);
+          console.log(`Likes milestone: ${track.trackName} | ${likeMilestone}`);
         }
       }
     }
@@ -340,14 +317,8 @@ async function main() {
   // ── Normal mode ───────────────────────────────────────────────────────────
   } else {
     for (const track of trackQueue) {
-      const primaryStats   = statsMap[track.primaryId]   || { views: 0, likes: 0 };
-      const secondaryStats = track.hasCombined ? (statsMap[track.secondaryId] || { views: 0, likes: 0 }) : null;
-      const combinedViews  = secondaryStats ? primaryStats.views + secondaryStats.views : null;
-
-      const stats = { primary: primaryStats, combined: combinedViews };
-
-      await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig,
-        { primary: track.primaryUrl }, stats, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
+      const primaryStats = statsMap[track.primaryId] || { views: 0, likes: 0 };
+      await processMilestones(sheets, existingMilestones, track.trackName, track.album, track.memberConfig, track.primaryUrl, primaryStats.views, primaryStats.likes, rawLogBuffer, track.songHashtags, track.albumHashtags, track.videoType, isComeback);
     }
   }
 
