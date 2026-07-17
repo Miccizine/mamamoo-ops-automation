@@ -165,6 +165,13 @@ async function main() {
   const sheets = await getSheetsClient();
   const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
 
+  const configRows = await getSheetData(sheets, 'Config');
+  const kkboxEnabled = configRows.find(r => r[0] === 'KKBOX_TRACKING')?.[1]?.trim().toUpperCase();
+  if (kkboxEnabled !== 'YES') {
+    console.log('KKBOX_TRACKING is not YES — exiting.');
+    return;
+  }
+
   await ensureSheet(sheets, spreadsheetId);
 
   const [registryRows, tracker] = await Promise.all([
