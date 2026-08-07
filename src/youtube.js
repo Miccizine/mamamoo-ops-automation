@@ -116,7 +116,7 @@ function buildYouTubeMilestoneEmbed(config, trackName, views, likes, countType, 
     sentence = `${config.handle}'s "${trackName}" MV has surpassed ${formattedViews} views on YouTube!`;
   }
 
-  const tweetLines = [milestoneLabel, '', sentence, '', `🔗 ${sourceUrl}`, ''];
+  const tweetLines = [milestoneLabel, '', sentence, '', `📽️ ${sourceUrl}`, ''];
   if (songHashtags)  tweetLines.push(songHashtags);
   if (albumHashtags) tweetLines.push(albumHashtags);
   if (config.tags)   tweetLines.push(config.tags);
